@@ -1,6 +1,6 @@
 # Typst Chemistry Guide (BeltOrganics)
 
-A short guide to writing chemistry formulae and drawing molecular structures in Typst, for use in the project's player docs (`docs/01-molecules.typ`, `docs/02-reactions.typ`).
+A short guide to writing chemistry formulae and drawing molecular structures in Typst, for use in the project's player docs (`docs/01-molecules.typ`, `docs/02-orbitals.typ`, `docs/03-reactions.typ`).
 
 ## Typst Syntax Quick Guide
 
@@ -180,10 +180,59 @@ Minimal example — water:
 - `hide(bounds: true, { ... })` hides part of a drawing (e.g. for animations).
 - CeTZ shapes can be mixed directly into the `skeletize` body: `#skeletize({ import cetz.draw: * line(...) })`.
 
+## Molecular orbital and energy diagrams with `modiagram`
+
+`@preview/modiagram:0.1.1` (modelled on the LaTeX modiagram package) draws
+molecular-orbital and energy-pathway diagrams on a CeTZ canvas. Used in
+`docs/02-orbitals.typ` for the orbital-energy figures.
+
+Import through an alias and use a *scoped* block import: modiagram re-exports
+CeTZ wrappers named `line`, `grid`, `content`, `circle`, ... that shadow the
+Typst built-ins, so keep the star import local:
+
+```typst
+#import "@preview/modiagram:0.1.1" as mo
+
+#figure({
+  import mo: *
+  modiagram(
+    ao(name: "homo", x: 0, energy: -0.6, electrons: "pair", label: [HOMO], label-size: 8pt),
+    ao(name: "lumo", x: 0, energy:  0.6, electrons: "",     label: [LUMO], label-size: 8pt),
+    en-difference("homo", "lumo", body: [gap], ratio: 50%),
+    energy-axis(title: [Energy]),
+  )
+})
+```
+
+- `ao(name, x, energy, electrons, label, ...)` draws one orbital bar.
+  `x`/`energy` are the bar centre (float = cm); `electrons` is a
+  space-separated list of `up`, `down`, `pair` (or `""` for empty);
+  `label` goes below the bar (math `$sigma^*$` or content `[HOMO]` both work).
+- `connect("a & b", style: "dashed" | "solid" | "dotted" | "gray")` draws
+  lines between named orbitals; for plain bars the default is dotted.
+- `connect-label("a", "b", body, ratio: 50%, pad: 0.1)` puts content along a
+  connection line.
+- `energy-axis(title: [Energy])` draws a vertical energy arrow (use
+  `style: "horizontal"` to lay it flat); `x-axis(title: [...])` adds a
+  horizontal axis and shares the origin corner with it.
+- `en-difference("a", "b", body: [gap])` draws a double-headed arrow between
+  two orbitals with an optional boxed ΔE label — ideal for HOMO–LUMO gaps.
+- `en-pathway(0, 0.5, 1.0, labels: (...), ...)` places a sequence of orbitals
+  at even spacing (reaction/energy pathways); `ep-annotation(from, to, ...)`
+  spans two of them with a double-headed arrow.
+- CeTZ wrappers (`line`, `content`, `circle`, `rect`, `mark`, ...) accept
+  orbital-position strings like `"homo.right"`, `"lumo.top"`, or
+  interpolations `("a.bottom", 50%, "b.bottom")`. Example: a dashed electron
+  flow arrow between two orbitals:
+  `line("d-homo.right", "a-lumo.left", mark: (end: ">"), stroke: (paint: gray, thickness: 0.6pt, dash: (array: (2.5pt, 2pt))))`.
+- Per-diagram overrides go through `config(...)` inside the diagram (keys:
+  `color`, `style`, `label-size`, `x-scale`, `energy-scale`, ...); document
+  defaults via `modiagram-setup(...)`.
+
 ### Tips
 
 - Inside `skeletize({ ... })`, every call must be on its own line or separated by `;` (normal Typst code-block rules).
 - The empty fragment `fragment("")` is allowed and takes no space; useful for drawing charges/Lewis structures without an atom.
 - Angles are relative to the drawing direction unless `absolute:` is given; keep a consistent `angle-increment` so `angle: 1`, `angle: 2`, ... are easy to reason about.
-- The player docs use the `ilm` template (`@preview/ilm:1.4.0`) for layout (cover page, table of contents, figure/table indices); the chemistry setup above is all you need on top of it. See `docs/01-molecules.typ` and `docs/02-reactions.typ` for complete working examples.
-- Package versions used in this repo: `alchemist:0.2.0` (depends on `cetz:0.5.2`), `chemformula:0.1.3`; compile with Typst >= 0.14 (`typst compile docs/01-molecules.typ`).
+- The player docs use the `ilm` template (`@preview/ilm:1.4.0`) for layout (cover page, table of contents, figure/table indices); the chemistry setup above is all you need on top of it. See `docs/01-molecules.typ`, `docs/02-orbitals.typ` and `docs/03-reactions.typ` for complete working examples.
+- Package versions used in this repo: `alchemist:0.2.0` (depends on `cetz:0.5.2`), `chemformula:0.1.3`, `modiagram:0.1.1` (depends on `cetz:0.4.2`, `zero:0.6.1`); compile with Typst >= 0.14 (`typst compile docs/01-molecules.typ`).

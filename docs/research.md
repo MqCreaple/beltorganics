@@ -200,6 +200,154 @@ orientation/rotation (graph isomorphism) and generating a unique name
   after alkanes). Nice worldbuilding reference for the "different universe"
   flavour.
 
+## 7. Stereochemistry: representation, perception, and effects
+
+Plain molecular graphs are *isomorphic* for stereoisomers: (R)- and (S)-lactic
+acid, or (E)- and (Z)-but-2-ene, have identical connectivity and collide under
+canonical naming. The design direction (matching InChI, RDKit, Open Babel, CDK)
+is to keep the graph as the backbone and attach small *parity descriptors* to
+stereogenic atoms and double bonds, rather than storing 3D coordinates as
+identity (a molecule has infinitely many conformers). The crucial insight: a
+parity is a sign *relative to a defined neighbor ordering*, so stereo
+perception always runs (1) canonicalize the plain graph, (2) compute parities
+against that canonical ordering.
+
+- **InChI stereo layers (`/t` tetrahedral, `/b` double bond)**
+  https://europepmc.org/article/PMC/4486400
+  Heller et al., "InChI, the IUPAC International Chemical Identifier",
+  J. Cheminform. 7:23 (2015). Describes the stereochemistry pass: after
+  canonical colors are found, each stereogenic atom's parity is the sign of the
+  oriented tetrahedron; each double bond's parity is computed from the
+  canonical-numbered substituents on either end (same side = minus, opposite
+  side = plus). A "layered" in-game name (connectivity + stereo layer) is the
+  direct model for distinguishing isomers.
+
+- **InChI source-code documentation / technical manual**
+  https://www.inchi-trust.org/download/103/InChI_Source_Code_Documentation_v1.0.pdf
+  Canonicalisation first, stereochemistry as a separate pass; wedge-bond
+  interpretation ("narrow end of wedge points to stereo"), parity markers
+  (+/-) rather than R/S labels, allenes/cumulenes as extended stereo systems.
+
+- **OpenSMILES stereo specification**
+  https://www.opensmiles.org/opensmiles.pdf
+  `@`/`@@` mark tetrahedral parity relative to the atom's left-to-right
+  neighbor order in the string; `/` and `\` mark double-bond geometry; ring
+  closures count as neighbors. Cheap to implement and a natural token set for
+  the game's pseudo-SMILES names.
+
+- **RDKit stereo model (ChiralTag, BondStereo)**
+  https://github.com/rdkit/rdkit/blob/master/Docs/Book/RDKit_Book.rst
+  The "Stereochemistry" section of the RDKit book: tetrahedral chirality is a
+  CW/CCW tag *relative to the ordering of the bonds around the atom*; double
+  bonds carry CIS/TRANS/ANY. `AssignStereochemistry` plus CIP labels (R/S,
+  E/Z); `AssignAtomChiralTagsFromStructure` perceives stereo from 3D. See also
+  `Code/GraphMol/catch_chirality.cpp` and the CIP-labeling doc in the repo.
+
+- **Computing stereo from 3D coordinates**
+  https://docs.rs/sdfrust/latest/src/sdfrust/descriptors/chirality.rs.html
+  Tetrahedral chirality = sign of the signed volume (triple product
+  a·(b×c) of the three substituent vectors relative to the fourth), with a
+  near-zero threshold for flat/unspecified; CIP priority via layered BFS with
+  "phantom atoms" for multiple bonds. For E/Z:
+  https://docs.rs/molcrafts-molrs-core/latest/molrs_core/stereo/fn.assign_bond_stereo_from_3d.html
+  the dihedral between the two highest-priority substituents decides: < 90° =
+  Z (same side), > 90° = E (opposite sides). In 2D, wedge/dash bonds supply the
+  ±z offsets for the same tests.
+
+- **CIP sequence rules (R/S, E/Z)**
+  https://iupac.qmul.ac.uk/BlueBook/P92.html
+  Priority by atomic number, then by BFS-expanded spheres of sorted atomic
+  numbers; multiple bonds contribute phantom duplicates of their far atom.
+  Simplified layered implementations (e.g. sdfrust above) are enough for a game
+  with four elements.
+
+- **Stereo-aware graph libraries (exact equality, hashing)**
+  https://github.com/maxim-papusha/StereoMolGraph
+  StereoMolGraph (Papusha & Leonhard, J. Chem. Inf. Model. 66, 3830, 2026):
+  graphs whose only concern is connectivity + relative stereochemistry;
+  circular-stereo hash (WL color refinement extended with chirality) for fast
+  approximate equality, VF2++-style isomorphism with stereo for exact checks.
+  A reference if the game later needs robust stereo isomorphism; the parity
+  approach above is sufficient for naming and properties.
+
+- **What stereochemistry changes in-game**
+  Enantiomers (R/S) have identical ΔH, ΔS, ΔG, boiling points and solubilities
+  in an achiral environment: they are distinct molecules (distinct names) but
+  behave identically unless chiral solvents/catalysts are added. Diastereomers
+  (E/Z, cis/trans) genuinely differ: dipole moment → polarity → solubility
+  (directly usable by the separation/belt system), and trans is usually a
+  little more stable than cis (~1 kcal/mol → a small ΔG correction).
+  Stereospecific reaction outcomes (SN2 inversion, anti-addition to alkenes)
+  can later be modelled as "stereo operators" on the same parities.
+
+## 8. Algorithm notes: PEOE charges, Hückel HOMO/LUMO, conjugation
+
+Notes distilled from the references in sections 3-4 for direct porting to JS.
+
+### PEOE (Gasteiger-Marsili) partial charges
+
+- Electronegativity as a function of charge: χ(q) = a + b·q + c·q².
+- Parameters per element *and* hybridization (sp3/sp2/sp); representative
+  values: H (7.17, 6.24, -0.56); C sp3 (7.98, 9.18, 1.88), C sp2 (8.79, 9.32,
+  1.51); N sp3 (11.54, 10.82, 1.36), N sp2 (12.87, 11.15, 0.85); O sp3 (14.18,
+  12.92, 1.39), O sp2 (17.07, 13.79, 0.47). The ordering O > N > C > H matches
+  the game's "greediness" ladder (Obligium > Naturium > Cardinium ≈ Habitium).
+- Hybridization from the graph: 4 singles = sp3; one double + singles = sp2;
+  triple or two doubles = sp; aromatic = sp2.
+- Initialise q from formal charges; iterate ~6-8 times with damping 0.5: at
+  iteration k, damp = 0.5^(k+1); per bond (i,j), transfer = damp·(χ_j − χ_i)/χ⁺
+  where χ⁺ is the electronegativity of the electron-poor end at q = +1; add to
+  one atom and subtract from the other (exact charge conservation). Cost
+  O(iterations·bonds), topology-only, qualitative trends (electronegative atoms
+  negative, H positive, inductive decay with distance).
+
+### Hückel MO (HMO) for HOMO/LUMO
+
+- Build the π subsystem (conjugated atoms, below) and an n×n matrix:
+  H_ii = α + h_X·β (h_X = 0 for carbon), H_ij = k_XY·β for bonded pairs
+  (k = 1 for C-C; ≈1.93 for C=O, ≈1.31 for C-O, ≈1.30/1.06 for C-N; a small
+  k ≈ 0.18 for C-CH3 hyperconjugation), 0 otherwise.
+- Diagonalize (small symmetric matrix; Jacobi/QL in JS) → eigenvalues x_i →
+  orbital energies E_i = α − x_i·β (β < 0). Fill 2 electrons per MO from the
+  bottom: HOMO = highest occupied, LUMO = lowest unoccupied, gap = E_LUMO −
+  E_HOMO. Only relative energies matter, so α = 0, β = 1 suffices.
+- Free outputs from eigenvectors: π electron density q_R = Σ b_i c_iR², π bond
+  order p_RS = Σ b_i c_iR c_iS, and delocalization (resonance) energy =
+  E_π(total) − E_π(localized reference) — benzene ≈ 2β. This makes
+  conjugation/aromaticity *emerge* from the same engine.
+- Heteroatom parameter table + worked example (acrolein):
+  http://www.pci.tu-bs.de/aggericke/PC4e/Kap_II/Hueckel_Acrolein.html
+  (Derflinger & Lischka values). Reactivity: frontier-orbital matching
+  (nucleophile HOMO ↔ electrophile LUMO) is exactly the game's "give/take"
+  check; the gap size can bias stochastic side-reaction weights.
+
+### Conjugation & aromaticity perception
+
+- Conjugated π systems: maximal connected subgraphs of π-participating atoms
+  (sp2/sp) connected by π bonds (double/triple/aromatic), e.g. the CDK
+  ConjugatedPiSystemsDetector (BFS over π atoms). These become the HMO
+  subsystems.
+- Aromaticity: (1) ring perception (SSSR; Balducci-Pearlman / GF(2) cycle
+  space, O(n³) worst case, fine at game scale); (2) per-ring π-electron count
+  (2π per double bond in the ring, lone-pair contributions for ring N/O);
+  (3) classify 4n+2 = aromatic, 4n (n>0) = antiaromatic, else non-aromatic;
+  (4) fused-ring pass 2: rings sharing an atom with an already-aromatic ring
+  are re-evaluated with aromatic atoms contributing 1π each, repeated until
+  convergence (handles naphthalene/indole). Reference implementation:
+  https://docs.rs/chematic-perception/latest/chematic_perception/aromaticity/
+- Game effect: aromatic rings gain resonance-energy ΔH stabilization and a
+  large HOMO-LUMO gap (stable, unreactive); antiaromatic rings are destabilized
+  and reactive; conjugated chains shrink the gap (reactive, colorful).
+
+## 9. Player-facing naming convention (decided)
+
+Inorganic compound names in the player docs are built from the invented element
+names (see AGENTS.md): two-element compounds take the greedier element with an
+*-ide* ending (cardinium diobligide = CO2, dihabitium obligide = water), and
+acids use *-ic acid* (cardinic acid = H2CO3). Organic compounds keep their
+familiar names (ethanol, benzene, ...). The familiar real-world name is given
+in parentheses at first mention in the docs.
+
 ## Open design questions (tracked here until decided)
 
 1. ΔS formula: Sackur–Tetrode for gases + simplified solvation/rotational
@@ -208,7 +356,13 @@ orientation/rotation (graph isomorphism) and generating a unique name
 2. Kinetics: how do stochastic side reactions get selected and rate-limited
    (activation-energy-like barrier from HOMO/LUMO gaps? Arrhenius-style T
    dependence)? Not yet specified in the design.
-3. Canonical name format: pseudo-SMILES string vs layered InChI-like name vs
-   human-readable pseudo-IUPAC (e.g. "Cn2-Ol"?). Decide in roadmap step 2.
+3. Canonical name format: research (section 7) suggests parity-based stereo
+   tokens layered on the canonical graph string — SMILES-style `@`/`@@` and
+   `/`/`\`, or an InChI-like `/t` `/b` layer — with human-readable pseudo-IUPAC
+   as an alternative. Decide in roadmap step 2.
 4. State of matter per species: derived from a per-element/per-functional-group
    phase table (boiling/melting analogues) — needed before belts can be typed.
+5. Stereochemistry depth for gameplay: do chiral centers get full R/S
+   treatment, or only E/Z (which drives dipole/solubility differences)? Should
+   chiral solvents/catalysts exist, and should reactions carry stereo operators
+   (SN2 inversion, anti-addition)? Decide together with roadmap step 2.
