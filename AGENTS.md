@@ -9,6 +9,13 @@ This file holds agent-facing conventions and the project roadmap. It does not re
 
 Keep these docs in sync whenever the design changes. To write chemistry content in Typst, see `.agents/typst-chemistry-guide.md` (the player docs use the `ilm` template: cover page, table of contents, numbered headings, figure/table indices).
 
+## Working with the user
+
+Whenever you think an instruction is unclear or wrong, stop and ask for
+clarification instead of carrying on in a potentially wrong direction. State
+your need clearly. It is much cheaper to catch a misunderstanding before work
+starts than to rework it afterwards.
+
 ## Project overview
 
 **BeltOrganics** is a factory-style game built with Node.js and themed around organic chemistry. Instead of moving generic objects between deterministic machines, the player:
@@ -30,7 +37,29 @@ The four elements have invented names — **Cardinium (C)**, **Habitium (H)**, *
 4. **Reaction thermodynamics** — ΔH, ΔS, ΔG; then equilibrium/kinetics and stochastic side-reaction generation.
 5. **World simulation** — belts, chambers, ports, phases, solvents, solubility, separation.
 
-**Status (2026-08-27):** step 1 (molecule data structure) is implemented in `src/chem/molecule.ts` - a molecular graph on graphology with element/formal charge on atoms, bond order on edges, tetrahedral parity labels on 4-coordinate sp3 carbons, and cis/trans labels on double bonds; implicit-hydrogen filling (`addImplicitHydrogens`) and a first hybridization labeler (`src/chem/hybridization.ts`, incl. non-VSEPR amide/furan/carboxylate/carbocation and conjugated-carbanion cases) and conjugated π system perception (`src/chem/conjugation.ts`, incl. separate systems for the two perpendicular π bonds of a triple bond) are in place. Steps 2-5 remain open.
+**Status (2026-08-28):** step 1 (molecule data structure) is implemented in
+`src/chem/molecule.ts` - a molecular graph on graphology with element/formal
+charge on atoms, bond order on edges, tetrahedral local-chirality labels on
+4-coordinate sp3 carbons, and cis/trans labels on double bonds;
+implicit-hydrogen filling (`addImplicitHydrogens`), a first hybridization
+labeler (`src/chem/hybridization.ts`, incl. the non-VSEPR
+amide/furan/carboxylate/carbocation and conjugated-carbanion cases), and
+conjugated pi-system perception (`src/chem/conjugation.ts`) are in place.
+
+Step 2 (identity & naming) is substantially implemented:
+`src/chem/smiles.ts` converts both ways between the game graph and SMILES
+(`toSmiles` / `parseSmiles` over the `openchem` library, with canonical
+names), tetrahedral stereochemistry is stored as explicit local-chirality
+labels (`TetrahedralStereo` in `src/chem/types.ts`: the four incident bonds
+in order under a fixed counterclockwise winding convention - the mirror
+image is an odd permutation; `src/chem/tetrahedral.ts` provides the order
+indicator, direction-from-bond and `@`/`@@` token derivation), and E/Z
+geometry is supported. Stress tests live in `test/smiles.test.ts` and
+`test/tetrahedral.test.ts`. Two openchem scale limits are documented (a
+chiral-branch nesting cap at ~42 centres and conjugated E/Z corruption) -
+see `docs/smiles-naming.md` section 6 for issue drafts. Substructure /
+functional-group queries (the rest of step 2) and steps 3-5 remain open.
+
 
 Design decisions inside each step are open; record chosen algorithms and their rationale in the code and in `docs/research.md`. The step-1 storage choice (graphology) and the game-engine choice (Phaser 4) are recorded in `docs/research.md` section 10.
 

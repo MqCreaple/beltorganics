@@ -512,9 +512,25 @@ in parentheses at first mention in the docs.
    (activation-energy-like barrier from HOMO/LUMO gaps? Arrhenius-style T
    dependence)? Not yet specified in the design.
 3. Canonical name format: research (section 7) suggests parity-based stereo
-   tokens layered on the canonical graph string — SMILES-style `@`/`@@` and
-   `/`/`\`, or an InChI-like `/t` `/b` layer — with human-readable pseudo-IUPAC
-   as an alternative. Decide in roadmap step 2.
+   tokens layered on the canonical graph string - SMILES-style `@`/`@@` and
+   `/`/`\`, or an InChI-like `/t` `/b` layer - with human-readable pseudo-IUPAC
+   as an alternative. Decide in roadmap step 2. The SMILES-style format is now
+   implemented: `src/chem/smiles.ts` provides `toSmiles`/`parseSmiles` over
+   openchem (section 10; `docs/smiles-naming.md`), with verified sample
+   outputs. Chosen convention: canonical names are openchem's canonical SMILES
+   (hetero-first flavour: ethanol `OCC`). Tetrahedral stereo is stored as an
+   explicit local-chirality label (`TetrahedralStereo`: the four incident
+   bonds in an arbitrary order, with a fixed counterclockwise winding
+   convention - the mirror image is an odd permutation, and `bonds` is omitted
+   for unspecified chirality), built at parse time from the Daylight
+   neighbour-order rule and the `@`/`@@` token; `src/chem/tetrahedral.ts`
+   converts the label to the SMILES viewpoint. The player docs (`docs/01-molecules.typ`) still promise
+   `CCO`/`COC` - update those examples to the openchem flavour. Note (verified
+   2026-08-27): openchem's canonicalization does not re-derive tetrahedral
+   `@`/`@@` tokens when it reorders atoms, so serialization learns the emitted
+   neighbour order from one achiral canonical pass and derives the token
+   directly (no search / no iteration cap).
+
 4. State of matter per species: derived from a per-element/per-functional-group
    phase table (boiling/melting analogues) — needed before belts can be typed.
 5. Stereochemistry depth for gameplay: do chiral centers get full R/S
@@ -574,3 +590,57 @@ molecule structure is built on a general graph library instead.
 - TypeScript + Vite for the web app (`npm run dev` / `npm run build`),
   Vitest for tests (`npm test`). `src/chem/` is pure logic with no DOM
   dependency, so the engine is testable in Node and usable in the browser.
+### SMILES generation for canonical names (roadmap step 2, 2026-08-27)
+
+Evaluation for turning the molecule graph into canonical, stereo-aware names -
+separate from the storage decision above, since this only concerns string
+output. Full note and verified sample outputs: `docs/smiles-naming.md`.
+
+- **openchem** (https://www.npmjs.com/package/openchem) - recommended. New
+  (2026) TypeScript-native library, MIT, no runtime dependencies, browser and
+  Node. `generateSMILES({ atoms, bonds }, true)` returns an order-independent
+  canonical SMILES from a plain object that maps 1:1 onto the graphology
+  graph; tetrahedral `@`/`@@` via `atom.chiral`, E/Z via `bond.stereo` up/down
+  on the adjacent single bonds; handles bracket atoms (charge, explicit H),
+  disconnected components, ring closures. Morgan-based canonicalization with
+  RDKit-style tie-breaking (author reports 100% agreement on a 325-molecule
+  set). Caveats: canonical flavour starts at hetero atoms (ethanol `OCC` vs
+  the `CCO` promised in the player docs), it aromatizes kekule benzene
+  (`c1ccccc1`), and it is young (0.2.x, single maintainer) - keep it behind a
+  thin adapter (`src/chem/naming.ts`) and pin the version. It still encodes
+  real-chemistry heuristics (periodic table, valence, aromaticity), which is
+  acceptable for *string output* because the game's elements already use the
+  real letters C/H/O/N and SMILES does not encode hybridization; all game
+  semantics stay in `src/chem/`.
+
+  Scale limits found by stress-testing (2026-08-28, `test/smiles.test.ts`):
+  openchem's canonical writer caps the nesting depth of chiral branches at
+  ~42 (a single chain with >~42 chiral centres loses tokens: 42 of 98 survive
+  at length 100), and its E/Z canonicalisation corrupts conjugated chains with
+  >= 3 double bonds (cis rewritten to trans). Non-conjugated double bonds and
+  chains up to 42 chiral centres round-trip losslessly; the conversion
+  algorithm is O(n) per pass (iterative-refinement matching + a bounded
+  per-centre correction loop; E/Z tokens solved as constraints along chains).
+
+  Implemented 2026-08-27: `src/chem/smiles.ts` (`toSmiles`/`parseSmiles`) +
+  `src/chem/tetrahedral.ts` (local-chirality label conversion: order
+  indicator, direction-from-bond, token derivation). `src/chem/canonical.ts`
+  was removed - stereo no longer needs Morgan ordering because the label is
+  self-contained. Structure-preservation tests live in `test/smiles.test.ts`;
+  the geometric conversion tests are in `test/tetrahedral.test.ts`. Caveat
+  found in practice: openchem's canonicalisation does not re-derive
+  tetrahedral `@`/`@@` tokens when it reorders atoms (the same enantiomer
+  written differently can canonicalize to different tokens), so `toSmiles`
+  learns the emitted neighbour order from a single achiral canonical pass and
+  derives the token with `tokenForOrder`; E/Z is order-independent and
+  round-trips directly. As part of this
+  work, `Molecule.bondBetween` was made order-independent (graphology's
+  `edge()` lookup turned out to be order-sensitive even for undirected
+  graphs).
+- **openchemlib** (https://www.npmjs.com/package/openchemlib) - fallback.
+  Mature; `toSmiles()`/`toIsomericSmiles()`, and its flavour matches the player
+  docs (`CCO`). But GWT-transpiled Java (heavy), API quirks (bond-order
+  argument handling, `CC(O)=O` flavour for acetic acid), and canonical SMILES
+  is not its cleanest path.
+- **@rdkit/rdkit** - not considered further: heavy async WASM, real-chemistry
+  only.

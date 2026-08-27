@@ -1,4 +1,4 @@
-﻿import './style.css';
+import './style.css';
 import { Molecule, conjugatedPiSystems, hybridizations } from './index';
 import type { Molecule as MoleculeType } from './chem';
 
@@ -55,16 +55,17 @@ const demos: Demo[] = [
   },
   {
     name: 'Chiral centre (1-aminoethanol skeleton)',
-    note: 'The central carbon is 4-coordinate sp3 and carries a tetrahedral parity label.',
+    note: 'The central carbon is 4-coordinate sp3 and carries a tetrahedral stereo label.',
     build: () => {
       const m = new Molecule();
-      const c = m.addAtom('C', { stereo: 'plus' });
+      const c = m.addAtom('C');
       m.addBond(c, m.addAtom('H'));
       m.addBond(c, m.addAtom('O'));
       m.addBond(c, m.addAtom('N'));
       const methyl = m.addAtom('C');
       m.addBond(c, methyl);
       while (m.bondOrderSum(methyl) < 4) m.addBond(methyl, m.addAtom('H'));
+      m.setAtomStereo(c, { bonds: m.bondsOf(c) as [string, string, string, string] });
       return m;
     },
   },

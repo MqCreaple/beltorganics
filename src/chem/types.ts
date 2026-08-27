@@ -1,4 +1,4 @@
-﻿import type { Attributes } from 'graphology-types';
+import type { Attributes } from 'graphology-types';
 
 /**
  * Shared types for the BeltOrganics chemistry engine (`src/chem/`).
@@ -13,22 +13,45 @@ export type ElementSymbol = 'C' | 'H' | 'O' | 'N';
 
 export type BondOrder = 1 | 2 | 3;
 
+/** Bond ids (the graphology edge keys) are `string`; defined here so the
+ * stereo label can reference them without importing the Molecule class. */
+export type AtomId = string;
+export type BondId = string;
+
 /**
- * Tetrahedral (chiral-centre) parity.
- *
- * A sign that records which way the four substituents are arranged relative to
- * a fixed, canonical ordering of the neighbours (see docs/research.md §7).
- * Perceiving the parity from 2D/3D input is a later step; here we only store
- * the label on any 4-coordinate sp3 carbon.
+ * Winding sense of three bonds around a tetrahedral centre, as seen looking
+ * down the first bond (from the substituent toward the centre).
  */
-export type TetrahedralStereo = 'plus' | 'minus' | 'unspecified';
+export type TetrahedralDirection = 'clockwise' | 'counterclockwise';
+
+/**
+ * Tetrahedral (chiral-centre) configuration, stored as an explicit local
+ * chirality specification: the four bonds incident to the centre in a given
+ * order.
+ *
+ * The winding convention is fixed: looking down `bonds[0]` (from the
+ * substituent toward the centre), the three trailing bonds
+ * (bonds[1], bonds[2], bonds[3]) wind **counterclockwise**. The mirror-image
+ * arrangement is expressed by an odd permutation of the order (swap any two
+ * bonds), so no explicit direction field is needed - see
+ * `src/chem/tetrahedral.ts` (`orderIndicator`, `directionFromBond`,
+ * `sameTetrahedron`).
+ *
+ * The order is arbitrary (e.g. the order the neighbours appear in the SMILES
+ * that produced the label). `bonds` is omitted when the centre is known to be
+ * stereogenic but its configuration is unspecified.
+ */
+export interface TetrahedralStereo {
+  /** The four bonds incident to the centre, in order; omitted when unspecified. */
+  bonds?: [BondId, BondId, BondId, BondId];
+}
 
 /**
  * Double-bond geometry.
  *
- * The player-facing cis/trans interpretation. The canonical parity form
- * (relative to the canonical neighbour ordering) is computed in the naming
- * step (roadmap step 2). 'either' = explicitly non-stereogenic double bond.
+ * The player-facing cis/trans interpretation, read directly from the SMILES
+ * directional-bond tokens when parsing (see `src/chem/smiles.ts`).
+ * 'either' = explicitly non-stereogenic double bond.
  */
 export type BondGeometryStereo = 'cis' | 'trans' | 'either' | 'unspecified';
 
@@ -53,8 +76,10 @@ export interface ElementInfo {
 /**
  * Attributes stored on every atom node.
  *
- * `stereo` carries the tetrahedral parity label; it is only meaningful on
- * 4-coordinate sp3 carbons (see `Molecule.isTetrahedralCenter`).
+ * `stereo` carries the tetrahedral local-chirality label; it is only
+ * meaningful on 4-coordinate sp3 carbons (see `Molecule.isTetrahedralCenter`)
+ * and references the four incident bonds, so the centre's hydrogens must be
+ * explicit (or all four neighbours heavy) for the label to be valid.
  */
 export interface AtomAttributes extends Attributes {
   element: ElementSymbol;

@@ -1,6 +1,6 @@
-﻿import { describe, expect, it } from 'vitest';
-import { Molecule } from '../src/chem';
-import type { BondOrder, ElementSymbol } from '../src/chem';
+import { describe, expect, it } from 'vitest';
+import { Molecule, toSmiles } from '../src/chem';
+import type { BondOrder, ElementSymbol, TetrahedralStereo } from '../src/chem';
 
 function saturate(m: Molecule, atom: string): void {
   const info = m.getAtom(atom);
@@ -115,7 +115,7 @@ describe('molecular formula and hydrogens', () => {
 describe('validation', () => {
   it('flags stereo labels on non-tetrahedral atoms', () => {
     const m = new Molecule();
-    const o = m.addAtom('O', { stereo: 'plus' });
+    const o = m.addAtom('O', { stereo: { bonds: ['b0', 'b1', 'b2', 'b3'] } });
     m.addBond(o, m.addAtom('H'));
     const issues = m.validate();
     expect(issues.some((i) => i.code === 'stereo-on-non-tetrahedral')).toBe(true);
@@ -134,7 +134,7 @@ describe('validation', () => {
     // C=O with two C-H bonds: the carbon is sp2 / trigonal planar and cannot
     // carry tetrahedral stereochemistry.
     const m = new Molecule();
-    const carbonyl = m.addAtom('C', { stereo: 'plus' });
+    const carbonyl = m.addAtom('C', { stereo: { bonds: ['b0', 'b1', 'b2', 'b3'] } });
     const o = m.addAtom('O');
     m.addBond(carbonyl, o, 2);
     m.addBond(carbonyl, m.addAtom('H'));
@@ -159,16 +159,18 @@ describe('validation', () => {
 describe('serialization', () => {
   it('round-trips structure and stereo through JSON', () => {
     // A genuine tetrahedral stereo centre: the 4-coordinate sp3 carbon of
-    // 1-aminoethanol, C(H)(OH)(NH2)(CH3), carrying a parity label. (A planar
-    // carbonyl carbon must never be used here - see the validation test
-    // "flags a tetrahedral label on a planar carbonyl carbon".)
+    // 1-aminoethanol, C(H)(OH)(NH2)(CH3), carrying a local-chirality label.
+    // (A planar carbonyl carbon must never be used here - see the validation
+    // test "flags a tetrahedral label on a planar carbonyl carbon".)
     const m = new Molecule();
-    const chiral = m.addAtom('C', { stereo: 'minus' });
+    const chiral = m.addAtom('C');
     m.addBond(chiral, m.addAtom('H'));
     m.addBond(chiral, m.addAtom('O'));
     m.addBond(chiral, m.addAtom('N'));
     const methyl = m.addAtom('C');
     m.addBond(chiral, methyl);
+    const label: TetrahedralStereo = { bonds: m.bondsOf(chiral) as [string, string, string, string] };
+    m.setAtomStereo(chiral, label);
     expect(m.isTetrahedralCenter(chiral)).toBe(true);
     expect(m.validate()).toHaveLength(0);
 
@@ -182,8 +184,11 @@ describe('serialization', () => {
         (id) =>
           restored.getAtom(id).element === 'C' && restored.isTetrahedralCenter(id),
       )!;
-    expect(restored.getAtom(restoredChiral).stereo).toBe('minus');
+    // fromJSON remaps the label's bond ids; the chirality (measured by the
+    // canonical name) survives.
+    expect(restored.getAtom(restoredChiral).stereo?.bonds).toBeDefined();
     expect(restored.validate()).toHaveLength(0);
+    expect(toSmiles(restored)).toBe(toSmiles(m));
   });
 
   it('clone is independent', () => {

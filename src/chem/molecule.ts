@@ -1,16 +1,17 @@
-﻿import Graph from 'graphology';
+import Graph from 'graphology';
 import { ELEMENTS, isElementSymbol } from './elements';
 import type {
   AtomAttributes,
+  AtomId,
   BondAttributes,
   BondGeometryStereo,
+  BondId,
   BondOrder,
   ElementSymbol,
   TetrahedralStereo,
 } from './types';
 
-export type AtomId = string;
-export type BondId = string;
+export type { AtomId, BondId } from './types';
 
 export interface AddAtomOptions {
   formalCharge?: number;
@@ -52,6 +53,7 @@ export type MoleculeIssueCode =
   | 'bad-bond-order'
   | 'valence-exceeded'
   | 'stereo-on-non-tetrahedral'
+  | 'stereo-bonds-mismatch'
   | 'stereo-on-non-double';
 
 export interface MoleculeIssue {
@@ -136,9 +138,11 @@ export class Molecule {
     return bonds;
   }
 
-  /** The bond between two atoms, if any. */
+  /** The bond between two atoms, if any (order-independent for undirected graphs). */
   bondBetween(source: AtomId, target: AtomId): BondId | undefined {
-    return this.#graph.edge(source, target);
+    // graphology's edge() lookup is order-sensitive even for undirected
+    // graphs, so try both directions.
+    return this.#graph.edge(source, target) ?? this.#graph.edge(target, source);
   }
 
   /** Number of distinct bonded neighbours. */
@@ -185,7 +189,7 @@ export class Molecule {
     if (!Number.isInteger(order) || order < 1 || order > 3) {
       throw new Error(`addBond: bond order must be 1, 2 or 3 (got ${String(order)})`);
     }
-    if (this.#graph.hasEdge(source, target)) {
+    if (this.#graph.hasEdge(source, target) || this.#graph.hasEdge(target, source)) {
       throw new Error(`addBond: a bond already exists between ${source} and ${target}`);
     }
     const id = `b${this.#nextBond++}`;
@@ -233,9 +237,9 @@ export class Molecule {
    * Is this atom a 4-coordinate sp3 carbon (a *candidate* stereo centre)?
    *
    * True for any carbon with exactly four single-bond neighbours. Whether the
-   * centre is actually chiral (four distinct substituents) is perceived during
-   * canonicalisation (roadmap step 2); the stereo label stored here is the
-   * parity relative to the canonical neighbour ordering.
+   * centre is actually chiral (four distinct substituents) is perceived later
+   * (roadmap step 2); the stereo label stored here is an explicit local
+   * chirality specification (`TetrahedralStereo`) referencing the four bonds.
    */
   isTetrahedralCenter(atom: AtomId): boolean {
     const view = this.getAtom(atom);
@@ -344,12 +348,28 @@ export class Molecule {
             `${ELEMENTS[view.element].valence} (may be intentional for a charged species)`,
         });
       }
-      if (view.stereo !== undefined && !this.isTetrahedralCenter(atom)) {
-        issues.push({
-          code: 'stereo-on-non-tetrahedral',
-          atom,
-          message: `stereo label "${view.stereo}" on ${atom} is not a 4-coordinate sp3 carbon`,
-        });
+      if (view.stereo !== undefined) {
+        if (!this.isTetrahedralCenter(atom)) {
+          issues.push({
+            code: 'stereo-on-non-tetrahedral',
+            atom,
+            message: `stereo label on ${atom} is not a 4-coordinate sp3 carbon`,
+          });
+        } else if (view.stereo.bonds !== undefined) {
+          const incident = new Set(this.bondsOf(atom));
+          const { bonds } = view.stereo;
+          const invalid =
+            bonds.length !== 4 || new Set(bonds).size !== 4 || bonds.some((b) => !incident.has(b));
+          if (invalid) {
+            issues.push({
+              code: 'stereo-bonds-mismatch',
+              atom,
+              message:
+                `tetrahedral stereo on ${atom} references bonds ` +
+                `${bonds.join(',')} but its incident bonds are ${[...incident].sort().join(',')}`,
+            });
+          }
+        }
       }
     }
     for (const bond of this.bonds()) {
@@ -380,26 +400,32 @@ export class Molecule {
 
   static fromJSON(data: SerializedMolecule): Molecule {
     const molecule = new Molecule();
-    const remap = new Map<AtomId, AtomId>();
+    const atomRemap = new Map<AtomId, AtomId>();
     for (const atom of data.atoms) {
-      const id = molecule.addAtom(atom.element, {
-        formalCharge: atom.formalCharge,
-        ...(atom.stereo !== undefined ? { stereo: atom.stereo } : {}),
-      });
-      remap.set(atom.id, id);
+      const id = molecule.addAtom(atom.element, { formalCharge: atom.formalCharge });
+      atomRemap.set(atom.id, id);
     }
+    const bondRemap = new Map<BondId, BondId>();
     for (const bond of data.bonds) {
-      const source = remap.get(bond.source);
-      const target = remap.get(bond.target);
+      const source = atomRemap.get(bond.source);
+      const target = atomRemap.get(bond.target);
       if (source === undefined || target === undefined) {
         throw new Error(`fromJSON: bond ${bond.id} references unknown atoms`);
       }
-      molecule.addBond(
+      const id = molecule.addBond(
         source,
         target,
         bond.order,
         bond.stereo !== undefined ? { stereo: bond.stereo } : {},
       );
+      bondRemap.set(bond.id, id);
+    }
+    // Tetrahedral labels reference bond ids, which fromJSON regenerates.
+    for (const atom of data.atoms) {
+      if (atom.stereo === undefined) continue;
+      const newAtom = atomRemap.get(atom.id);
+      if (newAtom === undefined) throw new Error(`fromJSON: atom ${atom.id} is missing`);
+      molecule.setAtomStereo(newAtom, remapTetrahedralStereo(atom.stereo, bondRemap));
     }
     return molecule;
   }
@@ -407,4 +433,20 @@ export class Molecule {
   clone(): Molecule {
     return Molecule.fromJSON(this.toJSON());
   }
+}
+
+/** Re-target a tetrahedral label's bond ids through a remap (used by fromJSON). */
+function remapTetrahedralStereo(
+  stereo: TetrahedralStereo,
+  bondRemap: ReadonlyMap<BondId, BondId>,
+): TetrahedralStereo {
+  if (stereo.bonds === undefined) return {};
+  const bonds = stereo.bonds.map((id) => {
+    const mapped = bondRemap.get(id);
+    if (mapped === undefined) {
+      throw new Error(`fromJSON: tetrahedral label references unknown bond ${id}`);
+    }
+    return mapped;
+  });
+  return { bonds: bonds as [BondId, BondId, BondId, BondId] };
 }
