@@ -30,14 +30,18 @@ The four elements have invented names — **Cardinium (C)**, **Habitium (H)**, *
 4. **Reaction thermodynamics** — ΔH, ΔS, ΔG; then equilibrium/kinetics and stochastic side-reaction generation.
 5. **World simulation** — belts, chambers, ports, phases, solvents, solubility, separation.
 
-Design decisions inside each step are open; record chosen algorithms and their rationale in the code and in `docs/research.md`.
+**Status (2026-08-27):** step 1 (molecule data structure) is implemented in `src/chem/molecule.ts` - a molecular graph on graphology with element/formal charge on atoms, bond order on edges, tetrahedral parity labels on 4-coordinate sp3 carbons, and cis/trans labels on double bonds; implicit-hydrogen filling (`addImplicitHydrogens`) and a first hybridization labeler (`src/chem/hybridization.ts`, incl. non-VSEPR amide/furan/carboxylate/carbocation and conjugated-carbanion cases) and conjugated π system perception (`src/chem/conjugation.ts`, incl. separate systems for the two perpendicular π bonds of a triple bond) are in place. Steps 2-5 remain open.
+
+Design decisions inside each step are open; record chosen algorithms and their rationale in the code and in `docs/research.md`. The step-1 storage choice (graphology) and the game-engine choice (Phaser 4) are recorded in `docs/research.md` section 10.
 
 ## Repository layout & conventions
 
-- Node.js, ESM (`"type": "module"`), Node >= 20.
-- `src/chem/` — chemistry engine (molecules, canonical naming, properties, thermodynamics).
-- `src/world/` — belts, chambers, ports, simulation (future).
+- TypeScript, ESM (`"type": "module"`), Node >= 20.
+- Vite dev server / production bundler for the web app (`npm run dev` / `npm run build`); Vitest for tests (`npm test`), `tsc --noEmit` via `npm run typecheck`.
+- Web app entry: `index.html` + `src/main.ts`; library entry: `src/index.ts`.
+- `src/chem/` - chemistry engine (molecule data structure on graphology; canonical naming, properties, thermodynamics next).
+- `src/world/` - belts, chambers, ports, simulation (future; not started).
 - `docs/` — design and player docs (Typst), research notes; `docs/build/` is a git-ignored output directory for compiled PDFs/previews.
 - `.agents/` — agent-only notes (e.g. `.agents/typst-chemistry-guide.md` for Typst chemistry syntax and molecule drawing with alchemist/chemformula).
-- `test/` — tests with `node:test`; run via `npm test`.
+- `test/` - Vitest suites (`test/*.test.ts`); run via `npm test`.
 - When adding external sources or adopting an algorithm, update `docs/research.md`.

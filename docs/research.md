@@ -323,10 +323,13 @@ Notes distilled from the references in sections 3-4 for direct porting to JS.
 
 ### Conjugation & aromaticity perception
 
-- Conjugated π systems: maximal connected subgraphs of π-participating atoms
-  (sp2/sp) connected by π bonds (double/triple/aromatic), e.g. the CDK
-  ConjugatedPiSystemsDetector (BFS over π atoms). These become the HMO
-  subsystems.
+- Conjugated π systems are the HMO subsystems. They are built from *π units*
+  (each π bond is a unit; a triple bond is two perpendicular units) joined by
+  single σ bonds — the v2 model implemented in `src/chem/conjugation.ts`
+  (see the dedicated subsection below). The classic alternative is the CDK
+  ConjugatedPiSystemsDetector (BFS over π atoms connected by π bonds); the
+  unit model exists so the two perpendicular π bonds of a triple bond (or of
+  an allene) land in separate systems.
 - Aromaticity: (1) ring perception (SSSR; Balducci-Pearlman / GF(2) cycle
   space, O(n³) worst case, fine at game scale); (2) per-ring π-electron count
   (2π per double bond in the ring, lone-pair contributions for ring N/O);
@@ -338,6 +341,158 @@ Notes distilled from the references in sections 3-4 for direct porting to JS.
 - Game effect: aromatic rings gain resonance-energy ΔH stabilization and a
   large HOMO-LUMO gap (stable, unreactive); antiaromatic rings are destabilized
   and reactive; conjugated chains shrink the gap (reactive, colorful).
+
+### Hybridization labeling rules (v1, no aromaticity perception yet)
+
+Rules distilled from the references above plus the sources below; the
+implementation is `src/chem/hybridization.ts`.
+
+- sp: a triple bond anywhere on the atom (alkynes, nitriles), or two double
+  bonds on the same atom (allenes, CO2, ketenes).
+- sp2: one double bond (alkenes, carbonyls, imines, aromatic rings in kekulé
+  form).
+- sp3: otherwise, **except** that a lone-pair heteroatom (neutral or anionic
+  N/O) bonded directly to an sp/sp2 atom is labeled sp2: its lone pair
+  conjugates into the neighbouring pi system. This is the rule behind the
+  classic non-VSEPR cases:
+  - **Amide nitrogen** (peptide bonds) is sp2 and planar because the N lone
+    pair resonates with the C=O (RC(=O)-NR2 <-> RC([O-])=[N+]R2):
+    https://iverson.cm.utexas.edu/courses/310N/POTDSp06/POTDLecture%2011.html
+    http://chem.ucalgary.ca/courses/353/Carey5th/Ch27/ch27-4-2.html
+  - **Furan oxygen** is sp2 because one lone pair sits in a p orbital and
+    joins the 4n+2 aromatic pi system (the other lone pair is in an sp2
+    orbital): https://www.chemeurope.com/en/encyclopedia/Furan.html
+  - **Carboxylate anion**: both oxygens are treated as sp2; the single-bonded
+    O- is sp2 through resonance with the C=O:
+    https://chem.libretexts.org/Bookshelves/Organic_Chemistry/Map:_Organic_Chemistry_(Smith)/14:_Conjugation_Resonance_and_Dienes/14.04:_The_Resonance_Hybrid
+  - Toolkit confirmation: RDKit labels enamine N (C=C[NH2]) and enol-ether O
+    (C=CO) as SP2, the same "lone pair next to a pi bond" heuristic:
+    https://github.com/oxpig/rdkit_to_params/blob/master/atom_types.md
+- Carbocations and carbanions (charged trivalent carbon):
+  - A carbocation (CH3+, R3C+) has an empty p orbital and is sp2 / trigonal
+    planar, defying VSEPR counting (3 sigma bonds, no lone pair -> would be
+    sp3):
+    https://app.jove.com/science-education/v/11747/concepts/carbocations
+    http://butane.chem.uiuc.edu/jsmoore/chem232/notes_current/Carbocation_RARs/NOTES-Carbocations.pdf
+  - A simple alkyl carbanion (CH3-) is sp3 and pyramidal (lone pair in an sp3
+    orbital, C3v), aligning with VSEPR:
+    https://en.wikipedia.org/wiki/Carbanion
+  - A *conjugated* carbanion (allyl anion, benzyl anion, enolate) is sp2 under
+    the same criterion as N/O lone pairs: the sp3 allylic carbon rehybridizes
+    to sp2 so its lone pair can sit in a p orbital and join the pi system:
+    https://www.jove.com/science-education/v/12408/molecular-orbitals-of-the-allyl-cation-and-anion
+- General VSEPR counting (sigma bonds + lone pairs -> number of hybrid
+  orbitals) and the single/double/triple shortcut:
+  https://courses.lumenlearning.com/suny-potsdam-organicchemistry/chapter/2-3-how-to-judge-hybridization-of-an-atom/
+  https://www.westfield.ma.edu/PersonalPages/cmasi/organic/screen_shots/202490/5_organic_2024_hybridization_cont.pdf
+
+Known simplifications in v1: aromaticity is not perceived yet, so a
+lone-pair heteroatom adjacent to an aromatic carbon (e.g. aniline N) is
+labeled sp2 although real aniline is ~sp3; the conjugation test only looks at
+direct multiple-bond neighbours; and positively charged N/O (ammonium,
+oxonium, protonated amide) have no lone pair to donate and are labeled sp3
+unless they also carry a double bond (e.g. pyridinium).
+
+### Conjugated π system perception (v2, implemented in src/chem/conjugation.ts)
+
+A conjugated system is built from *π units* rather than from a flat atom
+subgraph:
+
+- Each π bond is a unit: a double bond contributes 1 unit (2 electrons); a
+  triple bond contributes 2 units of 2 electrons each.
+- A lone pair or empty p orbital that makes an atom sp2 by conjugation (amide
+  N, furan O, carboxylate O-, allyl anion, carbocation) is a 1-atom unit:
+  2 electrons for a lone pair, 0 for an empty p orbital. A lone pair on an
+  atom that already carries a π bond (e.g. pyridine N) is not counted.
+- Two units belong to the same system when a *single σ bond* links an atom of
+  one unit to an atom of the other — the sp2-sp2 / sp2-sp single bond is what
+  carries the conjugation (butadiene's central bond, the C-C bond joining an
+  enyne's C=C and C≡C).
+
+Triple bonds: the two π bonds of a triple bond are mutually perpendicular
+(linear sp carbon, exactly the allene geometry), so they never conjugate with
+each other. Which one is "chain-active" toward neighbouring π units is a
+conformational choice: an enyne is planar, so its single C=C lines up with
+ONE alkyne π bond and the other stays localized. The same perpendicular rule
+keeps the two π bonds of an allene (or CO2) in two separate 2-electron
+systems, because conjugation never passes *through* a π bond itself.
+
+Divinylacetylene (H2C=CH-C≡C-CH=CH2) is the subtle case, because the two
+C(sp2)-C(sp) single bonds rotate almost freely and BOTH arrangements are
+accessible at room temperature:
+
+- planar (cis/trans) — both C=C lie in the plane of the same alkyne π bond:
+  one 6-atom/6-electron system + one localized 2-atom/2-electron system;
+- 90° twisted — the two C=C lie in the planes of the two DIFFERENT alkyne π
+  bonds: two separate 4-atom/4-electron systems.
+
+The experimental and ab initio literature below shows the planar cis/trans
+conformers are only marginally preferred (their enthalpies are nearly equal)
+and the perpendicular ("gosh"/gauche) orientation is the maximum of the
+torsional potential just ~180 cm^-1 (~0.5 kcal/mol) above them; an earlier
+estimate put the barrier at ~35 cm^-1. Electron diffraction and
+photoelectron band shapes are consistent with essentially free internal
+rotation. The game therefore ASSUMES the planar, maximally conjugated
+conformer — both double bonds conjugate with the SAME alkyne π bond, giving
+one 6-atom/6-electron system plus one localized 2-atom/2-electron system —
+and the 90°-twisted arrangement is a documented near-degenerate conformer
+rather than a distinct electronic state.
+
+Consequences of the assumed (planar) rule:
+
+- ethyne (HC≡CH): two localized 2-atom/2-electron systems;
+- vinylacetylene (HC≡C-CH=CH2): one 4-atom/4-electron system (one alkyne π +
+  the C=C) plus one localized 2-atom/2-electron system;
+- divinylacetylene (H2C=CH-C≡C-CH=CH2): one 6-atom/6-electron system plus one
+  localized 2-atom/2-electron system (planar conformer assumption);
+- allene (H2C=C=CH2): two 2-atom/2-electron systems (perpendicular by
+  construction; no free rotation).
+
+References (structure and conformation of divinylacetylene /
+1,5-hexadiene-3-yne):
+
+- Frolov, Yu. L.; Knizhnik, A. V. "Conformational structure of
+  divinylacetylene", J. Struct. Chem. 39(4) (1998) 496-501,
+  doi:10.1007/BF02903622 — MP2/6-31G* torsional potential of the vinyl
+  groups: the cis and trans planar conformers are nearly isoenergetic and the
+  maximum is the perpendicular ("gosh") orientation at 180.4 cm^-1 (~0.5
+  kcal/mol) above the cis form; with an earlier barrier estimate of ~35 cm^-1
+  the authors conclude DVA has virtually free rotation of the vinyl groups.
+- Almenningen, A.; Gogstad, E.; Hagen, K.; Schei, H.; Stølevik, R.;
+  Thingstad, Ø.; Traetteberg, M. "Conformation and molecular structure of
+  1,5-hexadiene-3-yne (divinylacetylene) and perchloro-1,5-hexadiene-3-yne as
+  determined by gas-phase electron diffraction and molecular-mechanics
+  calculations", J. Mol. Struct. 116 (1984) 131-140,
+  doi:10.1016/0022-2860(84)80189-1 — the electron-diffraction data for DVA
+  are consistent with free rotation of the vinyl groups.
+- Tørneng, E.; Nielsen, C. J.; Klaeboe, P.; Hopf, H.; Schüll, V. "The
+  conformation and vibrational spectra of 1,5-hexadiene-3-yne
+  (divinylacetylene) and perchloro-1,5-hexadiene-3-yne", J. Mol. Struct. 71
+  (1981) 71-89 — IR/Raman: DVA exists as a single conformer with anti (C2h)
+  symmetry in the condensed phases.
+- Brogli, F.; Heilbronner, E.; Wirz, J.; Kloster-Jensen, E.; Bergman, R. G.;
+  Vollhardt, K. P. C.; Ashe, A. J. III "The consequences of σ and π
+  conjugative interactions in mono-, di- and triacetylenes. A photoelectron
+  spectroscopic investigation", Helv. Chim. Acta 58 (1975) 2620 — the
+  essentially free internal rotation in DVA is visible in the band shapes of
+  its photoelectron spectrum (first IE 8.50 eV, NIST WebBook:
+  https://webbook.nist.gov/cgi/cbook.cgi?ID=C821089).
+- Price, W. C. "The absorption spectra of hexatriene and divinyl acetylene in
+  the vacuum ultra-violet", Proc. R. Soc. London A 185 (1946) 182 — vacuum
+  UV: the longest-wavelength absorptions are the strongest (N→V1
+  transitions), consistent with a conjugated π system.
+- Cyvin, S. J. "Two-dimensional Hückel molecular orbital theory",
+  J. Mol. Struct. (THEOCHEM) 86 (1982) 315-324,
+  doi:10.1016/0166-1280(82)80023-7 — 2D HMO treats the π' and π'' systems of
+  planar (0°) AND twisted (90°) divinylacetylene explicitly; DVA is called an
+  especially interesting case because the two perpendicular alkyne π bonds can
+  each host conjugation with a different vinyl group.
+
+Known simplifications: cross-conjugation and non-planar twisted geometries
+are not modelled; conformational flexibility (the nearly free internal
+rotation of real divinylacetylene) is not modelled and the planar, maximally
+conjugated conformer is assumed; aromaticity is still perceived from kekulé
+double bonds; a lone carbocation (CH3+) forms a 1-atom, 0-electron system.
 
 ## 9. Player-facing naming convention (decided)
 
@@ -366,3 +521,56 @@ in parentheses at first mention in the docs.
    treatment, or only E/Z (which drives dipole/solubility differences)? Should
    chiral solvents/catalysts exist, and should reactions carry stereo operators
    (SN2 inversion, anti-addition)? Decide together with roadmap step 2.
+
+## 10. Tooling decisions (2026-08-27)
+
+Libraries evaluated for storing molecule structures, and the choices made for
+the TypeScript/Vite web app.
+
+### Molecule-structure libraries on npm (evaluated, not adopted)
+
+- **openchemlib** (https://www.npmjs.com/package/openchemlib) - mature JS port
+  of the OpenChemLib Java library (maintained by Zakodium): molecular graph,
+  stereochemistry (R/S, E/Z), canonical SMILES, descriptors. Not adopted:
+  hardwired to the real periodic table and real chemical heuristics;
+  GWT-transpiled Java is heavy and not idiomatic TypeScript.
+- **@rdkit/rdkit** (https://www.npmjs.com/package/@rdkit/rdkit) - the official
+  RDKit WASM build. Extremely capable, but a large asynchronously-loaded WASM
+  module; same "real chemistry, not pseudo-chemistry" mismatch.
+- **openchem** (https://www.npmjs.com/package/openchem) - new (2026)
+  TypeScript-native cheminformatics library with tetrahedral and E/Z stereo
+  support and canonical SMILES. Promising, but still real-chemistry-oriented
+  (periodic table, SMILES, RDKit parity) and young.
+
+All three encode the real periodic table and real functional-group behaviour,
+while the game needs invented elements (Cardinium, Habitium, Obligium,
+Naturium) with custom parameters, custom canonical naming, and cheap property
+computation. Adopting one would fight the pseudo-chemistry design, so the
+molecule structure is built on a general graph library instead.
+
+### Graph-storage library (adopted)
+
+- **graphology** (https://github.com/graphology/graphology) - actively
+  maintained (~1M weekly downloads), ships TypeScript types, supports
+  attributes on nodes and edges (element/charge/stereo on atoms, bond
+  order/stereo on bonds), is event-driven, and has a standard library
+  (traversals, connected components, ...) that will serve ring perception and
+  conjugated-pi detection later. Molecule graphs are graphology graphs;
+  chemistry semantics live in `src/chem/` on top of the plain graph, so the
+  storage layer can be swapped without touching the chemistry code.
+
+### Game engine (chosen, not yet installed)
+
+- **Phaser 4** (https://phaser.io/) - the current 2D web game framework
+  (v4.2.1, July 2026), TypeScript declarations, scenes/tilemaps/sprites/input
+  out of the box; a good fit for the planned 2D top-down conveyor-belt
+  factory. Alternatives: PixiJS v8 (rendering only, more plumbing) and
+  Excalibur (TypeScript-native but smaller ecosystem). Phaser will be added as
+  a dependency when the game layer starts; the chemistry engine stays
+  framework-free so it runs in Node tests and the browser alike.
+
+### Toolchain
+
+- TypeScript + Vite for the web app (`npm run dev` / `npm run build`),
+  Vitest for tests (`npm test`). `src/chem/` is pure logic with no DOM
+  dependency, so the engine is testable in Node and usable in the browser.

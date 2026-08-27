@@ -110,6 +110,18 @@ Delocalization is not a curiosity — it is *stabilizing*. A conjugated molecule
   [Benzene. The ring's π electrons are shared around all six Cardinium atoms, which makes the ring unusually calm and hard to break.],
 )
 
+Not every multiple bond joins a conjugated system. A triple bond is one σ
+pair plus *two* π pairs, and those two π pairs point in perpendicular
+directions — the same geometry as an allene. Only one of them can line up
+with a neighbouring double bond at a time. The inspector assumes the planar
+arrangement, in which both double bonds of
+#ch("H2C==CH--C~~C--CH==CH2") conjugate with the *same* π pair of the central
+triple bond and the other π pair stays localised on the two Cardinium atoms —
+one extended conjugated system (six atoms, six electrons) plus one localised
+two-electron system. (Real divinylacetylene can twist the two vinyl groups
+almost freely between the two arrangements; the planar one is only marginally
+calmer.)
+
 Conjugation also reshapes the frontier orbitals: it *raises* the highest full orbital and *lowers* the lowest empty one, squeezing the gap between them. A small gap means the molecule is easily stirred — reactive, unstable, often colorful.
 
 == HOMO and LUMO — the giving and taking orbitals <sec:homo-lumo>
