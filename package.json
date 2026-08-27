@@ -1,0 +1,15 @@
+{
+  "name": "beltorganics",
+  "version": "0.1.0",
+  "description": "A factory-style game with an organic-chemistry-inspired pseudo-chemistry: convey molecules on belts, react them in chambers, and separate products from stochastic side reactions.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "license": "UNLICENSED"
+}
