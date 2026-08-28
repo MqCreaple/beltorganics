@@ -23,13 +23,13 @@ import { hasConjugableLonePair, hybridizationOf } from './hybridization';
  * simplification: the vinyl groups of real divinylacetylene rotate almost
  * freely (torsional barrier ~0.5 kcal/mol) and the 90°-twisted conformer
  * would instead give two separate 4-electron systems, one per alkyne π bond
- * (docs/research.md §8).
+ * (docs/research-chemistry.md §8).
  *
  * The same perpendicular rule keeps the two π bonds of an allene or of CO2 in
  * two separate 2-electron systems, since conjugation never "passes through" a
  * π bond itself.
  *
- * Known simplifications (documented in docs/research.md §8): cross-conjugation
+ * Known simplifications (documented in docs/research-chemistry.md §8): cross-conjugation
  * and non-planar twisted geometries are not modelled; conformational
  * flexibility is not modelled (the planar, maximally conjugated conformer is
  * assumed); aromaticity is still read from kekulé double bonds; a lone

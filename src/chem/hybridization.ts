@@ -4,7 +4,7 @@ import type { ElementSymbol } from './types';
 /**
  * Hybridization of the heavy atoms in a molecule.
  *
- * Labeling rules (v1, no aromaticity perception yet; see docs/research.md §8):
+ * Labeling rules (v1, no aromaticity perception yet; see docs/research-chemistry.md §8):
  *
  * 1. A triple bond anywhere on the atom -> sp (alkynes, nitriles).
  * 2. Two double bonds on the same atom -> sp (allenes, CO2, ketenes).
@@ -22,7 +22,7 @@ import type { ElementSymbol } from './types';
  * pair in an sp3 orbital), which aligns with VSEPR; only when the lone pair
  * sits next to a pi system (conjugated carbanion) is it sp2.
  *
- * Simplifications (documented in docs/research.md §8):
+ * Simplifications (documented in docs/research-chemistry.md §8):
  * - Aromaticity is not perceived yet: benzene is labeled from its kekulé
  *   double bonds, and a lone-pair heteroatom adjacent to an aromatic carbon
  *   (e.g. aniline's N) is labeled sp2 even though real aniline is ~sp3.

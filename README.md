@@ -23,10 +23,16 @@ carbons, and cis/trans labels on double bonds. It can fill implicit
 hydrogens (`addImplicitHydrogens`) and label hybridization of every
 non-hydrogen atom (`src/chem/hybridization.ts`), including the non-VSEPR
 cases (amide N, furan O, carboxylate, carbocations, conjugated carbanions), and detects conjugated π systems with their electron counts (incl. separate systems for the two perpendicular π bonds of a triple bond). The web shell (Vite +
-TypeScript) is scaffolded. Next up: canonical naming (roadmap step 2).
+TypeScript) is scaffolded. Canonical naming and stereo-aware SMILES conversion (roadmap step 2) are substantially implemented in `src/chem/smiles.ts` (see `docs/smiles-naming.md`).
 
-The game layer will run on **Phaser 4**; it is chosen but not yet a dependency
-(see `docs/research.md` section 10 for the decision).
+The game layer runs on **Phaser 4** (4.2.1, added as a dependency 2026-08-28;
+see `docs/research-game.md` section 10 for the decision).
+
+The world groundwork is in place too: an infinite grid recorded in 16x16 chunks
+(`src/world/`), chemical source blocks that hold a substance's SMILES formula, a
+global SMILES-to-molecule-graph registry (`src/chem/registry.ts`), and a playable
+**Phaser 4** shell (`src/game/`) with a gray grid, scroll zoom, and drag/WASD panning. Chemical sources are clickable: they open a centered block-UI panel (built with Preact/TSX); the molecule visualization is a placeholder for now.
+See `docs/game-world.md`.
 
 ## Quickstart
 
@@ -40,10 +46,11 @@ npm run build   # typecheck + production build (dist/)
 ## Layout
 
 - `AGENTS.md` - design spec and agent conventions (read this first)
-- `docs/` - design and player docs (Typst), research notes (`docs/research.md`)
+- `docs/` - design and player docs (Typst), research notes (`docs/research-chemistry.md`, `docs/research-game.md`)
 - `src/index.ts` - library entry
-- `src/main.ts` - web app entry (placeholder UI for the chemistry engine)
+- `src/main.ts` - web app entry (full-screen game canvas)
 - `src/chem/` - chemistry engine (molecule data structure; naming, properties,
   thermodynamics planned)
-- `src/world/` - world simulation (planned: belts, chambers, ports)
+- `src/world/` - world simulation (infinite chunked grid, blocks; belts, chambers, ports next)
+- `src/game/` - Phaser 4 game shell (grid, camera, input, HUD)
 - `test/` - Vitest suites

@@ -5,7 +5,8 @@ This file holds agent-facing conventions and the project roadmap. It does not re
 - `docs/01-molecules.typ` — molecules: molecular graph, the four atoms, bonds and bond polarity, shape and stereochemistry, identity and naming, functional groups.
 - `docs/02-orbitals.typ` — orbitals: orbital energy, σ and π bonding, conjugated π systems, HOMO/LUMO, orbital interactions.
 - `docs/03-reactions.typ` — reactions: enthalpy, entropy, Gibbs free energy, equilibrium, side reactions, separation.
-- `docs/research.md` — external references and open design questions for the chemistry engine.
+- `docs/research-chemistry.md` — chemistry-engine research: external references, algorithm notes and open design questions.
+- `docs/research-game.md` — game-related research: design precedents, tooling and world/game-shell decisions.
 
 Keep these docs in sync whenever the design changes. To write chemistry content in Typst, see `.agents/typst-chemistry-guide.md` (the player docs use the `ilm` template: cover page, table of contents, numbered headings, figure/table indices).
 
@@ -60,17 +61,20 @@ chiral-branch nesting cap at ~42 centres and conjugated E/Z corruption) -
 see `docs/smiles-naming.md` section 6 for issue drafts. Substructure /
 functional-group queries (the rest of step 2) and steps 3-5 remain open.
 
+World groundwork (2026-08-28): step 5 has started. `src/world/` records the map as an infinite grid in 16x16 chunks (`chunk.ts`, `world.ts`), one block per cell, with the first block kind - chemical source (`blocks.ts`, a single `formula` property holding the substance's SMILES). `src/chem/registry.ts` keeps the global SMILES -> molecule-graph map (every molecule is stored as its SMILES string; graphs are parsed once and cached). `src/game/` is the Phaser 4 game shell (`game.ts` wraps `Phaser.Game`, `scene.ts` renders the gray infinite grid, chunk borders and source squares with SMILES labels, and handles scroll zoom, drag and WASD pan; `camera.ts` holds the framework-free view math). Player-facing docs: `docs/game-world.md`; decisions: `docs/research-game.md` section 11. The world/chemistry layers stay framework-free. Blocks may carry an optional UI panel (`BlockUI`, `src/world/types.ts`): clickable blocks show a pointer cursor and open a centered HUD overlay built with Preact/TSX (`src/game/ui/`); the molecule visualization is a placeholder for now.
 
-Design decisions inside each step are open; record chosen algorithms and their rationale in the code and in `docs/research.md`. The step-1 storage choice (graphology) and the game-engine choice (Phaser 4) are recorded in `docs/research.md` section 10.
+
+Design decisions inside each step are open; record chosen algorithms and their rationale in the code and in `docs/research-chemistry.md`. The step-1 storage choice (graphology) and the game-engine choice (Phaser 4) are recorded in `docs/research-game.md` section 10.
 
 ## Repository layout & conventions
 
 - TypeScript, ESM (`"type": "module"`), Node >= 20.
 - Vite dev server / production bundler for the web app (`npm run dev` / `npm run build`); Vitest for tests (`npm test`), `tsc --noEmit` via `npm run typecheck`.
 - Web app entry: `index.html` + `src/main.ts`; library entry: `src/index.ts`.
-- `src/chem/` - chemistry engine (molecule data structure on graphology; canonical naming, properties, thermodynamics next).
-- `src/world/` - belts, chambers, ports, simulation (future; not started).
+- `src/chem/` - chemistry engine (molecule data structure on graphology; canonical naming, properties, thermodynamics next; `registry.ts` global SMILES-to-graph map).
+- `src/world/` - world simulation (started: infinite chunked grid, blocks incl. chemical source; belts/chambers/ports next).
+- `src/game/` - Phaser 4 game shell (`game.ts` wraps Phaser.Game; `scene.ts` renders grid/blocks + input/HUD; `camera.ts` framework-free view math).
 - `docs/` — design and player docs (Typst), research notes; `docs/build/` is a git-ignored output directory for compiled PDFs/previews.
 - `.agents/` — agent-only notes (e.g. `.agents/typst-chemistry-guide.md` for Typst chemistry syntax and molecule drawing with alchemist/chemformula).
 - `test/` - Vitest suites (`test/*.test.ts`); run via `npm test`.
-- When adding external sources or adopting an algorithm, update `docs/research.md`.
+- When adding external sources or adopting an algorithm, update `docs/research-chemistry.md`; record game/tooling decisions in `docs/research-game.md`.

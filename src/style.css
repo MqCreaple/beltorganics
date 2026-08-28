@@ -1,51 +1,120 @@
-﻿:root {
+:root {
   color-scheme: dark;
 }
 * {
   box-sizing: border-box;
 }
+html,
 body {
   margin: 0;
-  padding: 2rem;
-  font-family: system-ui, -apple-system, sans-serif;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+body {
   background: #12141a;
   color: #e6e8ee;
+  font-family: system-ui, -apple-system, sans-serif;
 }
-h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.6rem;
+#app {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
-.subtitle {
-  margin: 0 0 1.5rem;
-  color: #9aa1b5;
+#app canvas {
+  touch-action: none;
+  cursor: grab;
 }
-.card {
+/* Blocks that carry a UI are clickable -> pointer cursor (drag wins if both). */
+#app canvas.block-hover {
+  cursor: pointer;
+}
+#app canvas.dragging {
+  cursor: grabbing;
+}
+
+/* Block UI overlay (HUD panel centered on screen). */
+.block-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 16, 0.55);
+}
+.block-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 4rem));
+  max-height: calc(100vh - 4rem);
   background: #1b1f2a;
   border: 1px solid #2a3040;
   border-radius: 10px;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1rem;
-  max-width: 46rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
 }
-.card h2 {
-  margin: 0 0 0.25rem;
-  font-size: 1.1rem;
+.block-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #2a3040;
 }
-.card .note {
-  margin: 0 0 0.75rem;
+.block-panel-title {
+  font-weight: 600;
+}
+.block-panel-close {
+  background: transparent;
+  border: 0;
   color: #9aa1b5;
-  font-size: 0.9rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
 }
-dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.3rem 1rem;
-  margin: 0;
+.block-panel-close:hover {
+  color: #e6e8ee;
+  background: #2a3040;
 }
-dt {
-  color: #9aa1b5;
+.block-panel-content {
+  padding: 1rem;
+  overflow: auto;
 }
-dd {
-  margin: 0;
+
+/* Molecule visualization panel (placeholder). */
+.molecule-panel-formula {
+  margin: 0 0 0.5rem;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.molecule-panel-note {
+  margin: 0;
+  color: #9aa1b5;
+}
+
+.game-hud {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  padding: 10px 12px;
+  background: rgba(18, 20, 26, 0.78);
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  pointer-events: none;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.game-hud .hud-row {
+  color: #c6ccd8;
+}
+.game-hud .hud-hint {
+  margin-top: 4px;
+  color: #9aa1b5;
 }

@@ -3,8 +3,9 @@
 Design note for roadmap step 2 ("Identity & naming" in `AGENTS.md`). The
 player-facing promise lives in `docs/01-molecules.typ` (canonical names use a
 compact SMILES-like shorthand: ethanol `CCO`, dimethyl ether `COC`); the
-theoretical background (graph isomorphism, canonicalization, stereo layers,
-tooling decisions) lives in `docs/research.md` sections 1, 7 and 10.
+theoretical background (graph isomorphism, canonicalization, stereo layers)
+lives in `docs/research-chemistry.md` sections 1 and 7; the tooling
+decisions live in `docs/research-game.md` section 10.
 
 This note answers two questions for step 2:
 
@@ -104,7 +105,7 @@ Alternatives considered:
 - **`@rdkit/rdkit`**: the RDKit WASM build - extremely capable but a large,
   asynchronously loaded WASM module, and real-chemistry only.
 - **Custom emitter**: viable (Morgan canonicalization is a small pure-JS
-  algorithm, already referenced in `docs/research.md` section 1) - keep as the
+  algorithm, already referenced in `docs/research-chemistry.md` section 1) - keep as the
   fallback if the flavour decision in section 3 forces a `CCO`-style output.
 
 Risk note: openchem is young (0.2.x, single maintainer). Keep it behind the
@@ -160,11 +161,11 @@ Notes on the table:
   code, and `OCC` is still perfectly readable SMILES.
 - **Aromaticity.** openchem perceives aromaticity from kekule double bonds, so
   game benzene (stored with alternating single/double bonds and no aromatic
-  flags, see `docs/research.md` section 8) is emitted as `c1ccccc1`. Accepting
+  flags, see `docs/research-chemistry.md` section 8) is emitted as `c1ccccc1`. Accepting
   that is simplest; emitting kekule (`C1=CC=CC=C1`) would need aromaticity
   perception kept off or a post-processing step. This is a step-2 decision.
 - **Stereo format.** `@` / `@@` and `/` / `\` are confirmed as the emitted
-  tokens, matching the candidate format in `docs/research.md` section 7.
+  tokens, matching the candidate format in `docs/research-chemistry.md` section 7.
 - **Chirality labels.** The table shows the two possible tokens. A parsed
   label stores the four bonds in the Daylight string order under a fixed
   counterclockwise convention: `@` (counterclockwise) is stored as-is, `@@`
@@ -247,7 +248,7 @@ Known limitations:
 - Weininger, "SMILES, a chemical language and information system. 1.
   Introduction to methodology and encoding rules", J. Chem. Inf. Comput. Sci.
   1988, 28:31; and "SMILES. 2. Algorithm for generation of unique SMILES
-  notation" (CANON + GENES) - see `docs/research.md` section 1
+  notation" (CANON + GENES) - see `docs/research-chemistry.md` section 1
 - O'Boyle, "Towards a Universal SMILES representation - A standard method to
   generate canonical SMILES based on the InChI", J. Cheminform. 2012, 4:22
 - openchem (npm): https://www.npmjs.com/package/openchem ;

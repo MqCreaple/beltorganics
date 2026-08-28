@@ -194,7 +194,7 @@ describe('conjugated π systems', () => {
     // 6-atom, 6-electron system + one localized 2-atom, 2-electron system.
     // (Real divinylacetylene rotates almost freely; the 90°-twisted conformer
     // — two separate 4-electron systems — is only ~0.5 kcal/mol higher, see
-    // docs/research.md §8.)
+    // docs/research-chemistry.md §8.)
     expect(electronSummary(conjugatedPiSystems(m))).toBe('2a/2e, 6a/6e');
   });
 

@@ -5,3 +5,4 @@ export * from './hybridization';
 export * from './conjugation';
 export * from './tetrahedral';
 export * from './smiles';
+export * from './registry';
