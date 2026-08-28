@@ -13,13 +13,13 @@ export interface GameSceneOptions {
   hud?: boolean;
 }
 
-const BACKGROUND = 0x12141a;
-const GRID_COLOR = 0x2e3340;
-const GRID_COLOR_FAR = 0x242833;
-const CHUNK_COLOR = 0x4d5464;
-const SOURCE_FILL = 0x2f7d4f;
-const SOURCE_STROKE = 0x63b47f;
-const LABEL_COLOR = '#dfe3ec';
+const BACKGROUND = 0xf2f4f8;
+const GRID_COLOR = 0xd9dee8;
+const GRID_COLOR_FAR = 0xe4e8ef;
+const CHUNK_COLOR = 0xb6becd;
+const SOURCE_FILL = 0x2f9e63;
+const SOURCE_STROKE = 0x1f7a49;
+const LABEL_COLOR = '#223049';
 
 /** Below this on-screen spacing (px), minor grid lines and chunk borders thin out. */
 const MIN_GRID_SPACING_PX = 10;
@@ -31,6 +31,20 @@ const CLICK_DRAG_THRESHOLD_PX = 5;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+/** Source-block label: the substance's IUPAC name once known, else its SMILES. */
+function sourceLabelText(formula: string): string {
+  return moleculeRegistry.substanceName(formula) ?? formula;
+}
+
+/**
+ * Device pixel ratio (>= 1). Phaser renders the canvas at CSS-pixel
+ * resolution, so on high-DPI displays the browser upscales it; rasterizing
+ * label textures at this ratio keeps the glyphs at 1 device pixel per texel.
+ */
+function devicePixelRatio(): number {
+  return typeof window !== 'undefined' && window.devicePixelRatio > 1 ? window.devicePixelRatio : 1;
 }
 
 /**
@@ -211,15 +225,19 @@ export class GameScene extends Phaser.Scene {
 
       // Placeholder squares; real textures come later.
       const inset = Math.max(0.02, 0.08);
-      g.fillStyle(isSourceBlock(block) ? SOURCE_FILL : 0x888888, 1);
+      g.fillStyle(isSourceBlock(block) ? SOURCE_FILL : 0x9aa3b2, 1);
       g.fillRect(gx + inset, gy + inset, 1 - inset * 2, 1 - inset * 2);
-      g.lineStyle(Math.max(0.02, 0.03) / this.camera.zoom, isSourceBlock(block) ? SOURCE_STROKE : 0xaaaaaa, 1);
+      g.lineStyle(Math.max(0.02, 0.03) / this.camera.zoom, isSourceBlock(block) ? SOURCE_STROKE : 0x6b7385, 1);
       g.strokeRect(gx + inset, gy + inset, 1 - inset * 2, 1 - inset * 2);
 
       if (isSourceBlock(block) && this.camera.zoom >= LABEL_MIN_ZOOM) {
         let label = this.#labels.get(key);
         if (label === undefined) {
-          label = this.add.text(gx + 0.5, gy, block.formula, {
+          // Kick off the substance-name lookup (PubChem common/IUPAC name, CIR
+          // fallback) so the label switches from the raw SMILES to the name
+          // once it resolves; the registry caches the result per substance.
+          void moleculeRegistry.fetchSubstanceName(block.formula);
+          label = this.add.text(gx + 0.5, gy, sourceLabelText(block.formula), {
             fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
             fontSize: '12px',
             color: LABEL_COLOR,
@@ -227,12 +245,26 @@ export class GameScene extends Phaser.Scene {
           label.setOrigin(0.5, 1);
           this.#labels.set(key, label);
         }
+        const dpr = devicePixelRatio();
         const fontSize = clamp(this.camera.zoom * 0.28, 9, 14);
-        label.setText(block.formula);
+        label.setText(sourceLabelText(block.formula));
         label.setFontSize(fontSize);
+        // Rasterize the text texture at the device pixel ratio: Phaser's
+        // documented fix for blurry text under a zooming camera / scaling
+        // (default resolution 1 leaves the small 9-14 px textures upscaled by
+        // the browser on high-DPI displays).
+        label.setResolution(dpr);
         // Counteract the camera zoom so labels keep a fixed on-screen size.
         label.setScale(1 / this.camera.zoom);
-        label.setPosition(gx + 0.5, gy - 0.04);
+        // Snap the label's anchor to whole device pixels so the small texture
+        // is never sampled at fractional positions (the main cause of blur
+        // when zoomed out to the clamped 9 px minimum).
+        const screenX = this.camera.worldToScreenX(gx + 0.5);
+        const screenY = this.camera.worldToScreenY(gy - 0.04);
+        label.setPosition(
+          this.camera.screenToWorldX(Math.round(screenX * dpr) / dpr),
+          this.camera.screenToWorldY(Math.round(screenY * dpr) / dpr),
+        );
       }
     });
 

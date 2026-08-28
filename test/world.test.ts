@@ -9,6 +9,7 @@ import {
   localCoordsOf,
 } from '../src/world';
 import { MoleculeRegistry, moleculeRegistry } from '../src/chem/registry';
+import { formulaToString } from '../src/chem';
 import { Camera, DEFAULT_ZOOM } from '../src/game/camera';
 
 describe('chunk coordinates', () => {
@@ -150,6 +151,11 @@ describe('blocks', () => {
     expect(isSourceBlock(source)).toBe(true);
   });
 
+  it('provides a short panel title without the formula', () => {
+    const source = new ChemicalSourceBlock('CCO');
+    expect(source.title).toBe('Chemical Source');
+  });
+
   it('a chemical source may carry an optional block UI', () => {
     const ui = () => ({ tagName: 'DIV' }) as HTMLElement;
     const source = new ChemicalSourceBlock('CCO', ui);
@@ -162,16 +168,16 @@ describe('MoleculeRegistry', () => {
   it('parses SMILES on first use and caches the graph', () => {
     const registry = new MoleculeRegistry();
     const water = registry.get('O');
-    expect(water.molecularFormula()).toBe('H2O');
+    expect(formulaToString(water.molecularFormula())).toBe('H2O');
     expect(registry.get('O')).toBe(water); // cached: same instance
     expect(registry.has('O')).toBe(true);
     expect(registry.size).toBe(1);
 
-    expect(registry.get('CCO').molecularFormula()).toBe('C2H6O');
-    expect(registry.get('c1ccccc1').molecularFormula()).toBe('C6H6');
-    expect(registry.get('O=C=O').molecularFormula()).toBe('CO2');
-    expect(registry.get('CC(=O)O').molecularFormula()).toBe('C2H4O2');
-    expect(registry.get('N').molecularFormula()).toBe('H3N'); // Hill order: H before N when there is no carbon
+    expect(formulaToString(registry.get('CCO').molecularFormula())).toBe('C2H6O');
+    expect(formulaToString(registry.get('c1ccccc1').molecularFormula())).toBe('C6H6');
+    expect(formulaToString(registry.get('O=C=O').molecularFormula())).toBe('CO2');
+    expect(formulaToString(registry.get('CC(=O)O').molecularFormula())).toBe('C2H4O2');
+    expect(formulaToString(registry.get('N').molecularFormula())).toBe('H3N'); // Hill order: H before N when there is no carbon
     expect(registry.size).toBe(6);
   });
 

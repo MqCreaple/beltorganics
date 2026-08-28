@@ -1,5 +1,6 @@
-import { render } from 'preact';
+﻿import { render } from 'preact';
 import type { BlockUI } from '../../world';
+import { moleculeRegistry } from '../../chem';
 import { MoleculePanel } from './molecule-panel';
 
 /**
@@ -7,14 +8,14 @@ import { MoleculePanel } from './molecule-panel';
  *
  * The returned function creates a host element, renders the (Preact) panel
  * into it and hands the host back - the world engine only ever sees the DOM
- * element, never Preact. The molecule visualization itself comes later; for
- * now this shows the placeholder `MoleculePanel`.
+ * element, never Preact. The panel receives the global molecule registry so
+ * the structure-diagram SVG is parsed/rendered lazily and cached there.
  */
 export function chemicalSourceUI(formula: string): BlockUI {
   return () => {
     const host = document.createElement('div');
     host.className = 'molecule-panel-host';
-    render(<MoleculePanel formula={formula} />, host);
+    render(<MoleculePanel formula={formula} registry={moleculeRegistry} />, host);
     return host;
   };
 }

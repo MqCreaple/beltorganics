@@ -1,5 +1,5 @@
-﻿import { describe, expect, it } from 'vitest';
-import { Molecule, hybridizationOf, hybridizations } from '../src/chem';
+import { describe, expect, it } from 'vitest';
+import { Molecule, formulaToString, hybridizationOf, hybridizations } from '../src/chem';
 
 describe('hybridization: cases that align with VSEPR', () => {
   it('methane: sp3 carbon', () => {
@@ -91,7 +91,7 @@ describe('hybridization: cases that align with VSEPR', () => {
     for (let i = 0; i < 6; i++) m.addBond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
     m.addImplicitHydrogens();
     for (const c of ring) expect(hybridizationOf(m, c)).toBe('sp2');
-    expect(m.molecularFormula()).toBe('C6H6');
+    expect(formulaToString(m.molecularFormula())).toBe('C6H6');
   });
 });
 
@@ -115,7 +115,7 @@ describe('hybridization: cases that defy VSEPR (conjugated lone pairs)', () => {
     expect(hybridizationOf(m, carbonyl)).toBe('sp2');
     expect(hybridizationOf(m, oxy)).toBe('sp2');
     expect(hybridizationOf(m, methyl)).toBe('sp3');
-    expect(m.molecularFormula()).toBe('C3H7NO');
+    expect(formulaToString(m.molecularFormula())).toBe('C3H7NO');
   });
 
   it('furan oxygen is sp2, not sp3', () => {
@@ -135,7 +135,7 @@ describe('hybridization: cases that defy VSEPR (conjugated lone pairs)', () => {
     // VSEPR (2 sigma bonds + 2 lone pairs) would say sp3...
     expect(hybridizationOf(m, o)).toBe('sp2');
     for (const c of [c2, c3, c4, c5]) expect(hybridizationOf(m, c)).toBe('sp2');
-    expect(m.molecularFormula()).toBe('C4H4O');
+    expect(formulaToString(m.molecularFormula())).toBe('C4H4O');
   });
 
   it('carboxylate anion: both oxygens are sp2', () => {
@@ -156,7 +156,7 @@ describe('hybridization: cases that defy VSEPR (conjugated lone pairs)', () => {
     expect(hybridizationOf(m, oxyDouble)).toBe('sp2');
     expect(hybridizationOf(m, oxySingle)).toBe('sp2');
     expect(hybridizationOf(m, carbonyl)).toBe('sp2');
-    expect(m.molecularFormula()).toBe('C2H3O2');
+    expect(formulaToString(m.molecularFormula())).toBe('C2H3O2');
     // addImplicitHydrogens must not have protonated the anionic oxygen.
     expect(m.bondOrderSum(oxySingle)).toBe(1);
     expect(m.implicitHydrogens(oxySingle)).toBe(0);
@@ -185,7 +185,7 @@ describe('hybridization: cases that defy VSEPR (conjugated lone pairs)', () => {
     expect(hybridizationOf(m, c1)).toBe('sp2');
     expect(hybridizationOf(m, c2)).toBe('sp2');
     expect(hybridizationOf(m, c3)).toBe('sp2');
-    expect(m.molecularFormula()).toBe('C3H5');
+    expect(formulaToString(m.molecularFormula())).toBe('C3H5');
   });
 
   it('hybridizations() covers every non-hydrogen atom', () => {

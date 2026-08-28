@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Molecule, parseSmiles, toSmiles } from '../src/chem';
+import { Molecule, formulaToString, getRdkitModule, parseSmiles, toSmiles } from '../src/chem';
 
 // ---------------------------------------------------------------------------
 // Small structure helpers (deliberately not atom-identity based)
 // ---------------------------------------------------------------------------
 
 function formula(m: Molecule): string {
-  return m.molecularFormula();
+  return formulaToString(m.molecularFormula());
 }
 
 function heavyAtoms(m: Molecule): number {
@@ -137,10 +137,10 @@ describe('parseSmiles', () => {
       (s) => toSmiles(parseSmiles(s)),
     );
     for (const c of l) expect(c).toBe(l[0]);
-    expect(l[0]).toBe('N[C@@H](C)C(=O)O'); // conventional L-alanine
+    expect(l[0]).toBe('C[C@H](N)C(=O)O'); // conventional L-alanine (RDKit canonical)
     const d = ['N[C@H](C)C(=O)O', 'N[C@@H](C(=O)O)C'].map((s) => toSmiles(parseSmiles(s)));
     expect(d[0]).toBe(d[1]);
-    expect(d[0]).toBe('N[C@H](C)C(=O)O'); // conventional D-alanine
+    expect(d[0]).toBe('C[C@@H](N)C(=O)O'); // conventional D-alanine (RDKit canonical)
     expect(d[0]).not.toBe(l[0]);
   });
 
@@ -241,7 +241,7 @@ describe('toSmiles', () => {
     const a = toSmiles(ethanol());
     const b = toSmiles(ethanolReversed());
     expect(a).toBe(b);
-    expect(a).toBe('OCC'); // openchem's canonical flavour (hetero-first)
+    expect(a).toBe('CCO'); // RDKit's canonical flavour (matches the player docs)
     const back = parseSmiles(a);
     expect(formula(back)).toBe('C2H6O');
     expect(neighborElements(back, atomWith(back, 'O'))).toEqual(['C', 'H']);
@@ -310,20 +310,23 @@ describe('toSmiles', () => {
 });
 
 describe('stress: very long molecules', () => {
-  it('round-trips a chain of 42 chiral centres (openchem nesting cap)', () => {
+  it('round-trips a chain of 248 chiral centres (~750 heavy atoms)', () => {
     // An ethyl side group on every non-terminal carbon makes each of them a
     // (constitutionally) chiral centre: left chain, right chain, ethyl, H.
     // (A methyl side group would leave the end-adjacent carbons non-chiral,
     // because their terminal CH3 and the side-group CH3 are identical
     // substituents.)
     //
-    // Scale limit: openchem's canonical writer caps the nesting depth of
-    // chiral branches at ~42 - verified that a 46+ carbon chain drops chiral
-    // tokens during canonicalisation (42 of 98 survive at length 100). So the
-    // longest single-chain chiral stress test that round-trips losslessly is
-    // 42 centres; this exercises the O(n) matching + per-centre correction
-    // loop at scale, and the cap is a documented openchem limitation.
-    const length = 44;
+    // Scale limit (RDKit.js, measured 2026-08-28 with fresh wasm instances):
+    // canonical get_smiles overflows the JS stack somewhere in the ~500-800
+    // atom range depending on the structure - a linear chain overflows around
+    // 550-800 atoms, while this shallow-branching chiral chain still
+    // round-trips at 2696 heavy atoms (backbone 900, ~900 centres). The
+    // E/Z stress below is the binding constraint. This test uses length 250
+    // (~746 heavy atoms, 248 centres) to sit inside the documented limit
+    // while exercising performance/correctness at scale (measured ~0.5 s for
+    // the full round-trip).
+    const length = 250;
     const m = new Molecule();
     const chain: string[] = [];
     for (let i = 0; i < length; i++) chain.push(m.addAtom('C'));
@@ -352,21 +355,30 @@ describe('stress: very long molecules', () => {
     }
     expect(m.validate()).toHaveLength(0);
 
+    const started = performance.now();
     const smiles = toSmiles(m);
     const back = parseSmiles(smiles);
     // Every centre survives, and the round-trip is a fixed point (i.e. the
     // whole random chirality pattern is preserved).
     expect(back.atoms().filter((id) => back.getAtom(id).stereo?.bonds !== undefined).length).toBe(centres);
     expect(toSmiles(back)).toBe(smiles);
+    // Performance guard: the measured round-trip is ~0.5 s; the generous
+    // bound catches pathological (e.g. quadratic) regressions, not timing
+    // noise.
+    expect(performance.now() - started).toBeLessThan(60000);
   }, 120000);
 
-  it('round-trips ~500 non-conjugated double bonds with random geometry', () => {
-    // C=C-C-C=C-C-C=C-... : double bonds separated by two single bonds. The
-    // conjugated (alternating) pattern is avoided on purpose: openchem's E/Z
-    // canonicalisation corrupts conjugated chains with >= 3 double bonds
-    // (verified: it rewrites cis to trans, e.g. C/C=C\C=C\C=C/C becomes
-    // C/C=C/C=C/C=C/C), a library limitation we cannot work around.
-    const dbs = 500;
+  it('round-trips 180 non-conjugated double bonds (~540 heavy atoms)', () => {
+    // C=C-C-C=C-C-C=C-... : double bonds separated by two single bonds, so
+    // every double bond is an independent E/Z centre (a conjugated pattern
+    // would couple neighbouring geometries).
+    //
+    // Scale limit (RDKit.js, measured 2026-08-28 with fresh wasm instances):
+    // canonical get_smiles overflows the JS stack for this E/Z chain at 559
+    // heavy atoms (dbs=186); 550 (dbs=183) still works. dbs=180 (541 heavy
+    // atoms) is just under the measured ceiling, so this pushes the
+    // round-trip to the edge of the safe range (measured ~0.26 s).
+    const dbs = 180;
     const m = new Molecule();
     const count = 3 * dbs + 1;
     const chain: string[] = [];
@@ -391,6 +403,7 @@ describe('stress: very long molecules', () => {
     m.addImplicitHydrogens();
 
     const doubleBonds = m.bonds().filter((id) => m.getBond(id).order === 2).length;
+    const started = performance.now();
     const smiles = toSmiles(m);
     const back = parseSmiles(smiles);
     // Every double bond survives, every geometry survives (fixed point).
@@ -402,5 +415,66 @@ describe('stress: very long molecules', () => {
       }).length,
     ).toBe(stereogenic);
     expect(toSmiles(back)).toBe(smiles);
+    // Performance guard (measured ~0.26 s; generous bound for robustness).
+    expect(performance.now() - started).toBeLessThan(60000);
   }, 120000);
+});
+
+// ---------------------------------------------------------------------------
+// Ring chiral centres (proline, cholesterol, morphine, ...)
+// ---------------------------------------------------------------------------
+
+/**
+ * The game's parse -> write round-trip must reproduce RDKit's own canonical
+ * SMILES for the same input (same chirality at every centre). Ring chiral
+ * centres are the hard case: the writer's neighbour order differs from the
+ * input string's, and RDKit's 'cw'/'ccw' JSON sense is not canonical, so the
+ * parser orders each centre's neighbours by RDKit's canonical CIP ranks (see
+ * src/chem/smiles.ts).
+ */
+describe('ring chiral centres', () => {
+  const RING_CHIRAL_CASES: ReadonlyArray<readonly [string, string]> = [
+    ['L-proline', 'C1C[C@H](NC1)C(=O)O'],
+    ['D-proline', 'C1C[C@@H](NC1)C(=O)O'],
+    [
+      'cholesterol',
+      'C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O)C)C',
+    ],
+    [
+      'cholesterol mirror',
+      'C[C@@H](CCCC(C)C)[C@@H]1CC[C@H]2[C@]1(CC[C@@H]3[C@@H]2CC=C4[C@]3(CC[C@H](C4)O)C)C',
+    ],
+    ['morphine', 'CN1CC[C@]23[C@@H]4[C@H]1CC5=C2C(=C(C=C5)O)O[C@H]3[C@H](C=C4)O'],
+    ['morphine mirror', 'CN1CC[C@@]23[C@H]4[C@@H]1CC5=C2C(=C(C=C5)O)O[C@@H]3[C@@H](C=C4)O'],
+    ['2-methyl-THF', 'C[C@H]1CCCCO1'],
+    ['2-methyl-THF mirror', 'C[C@@H]1CCCCO1'],
+    ['methyl-decalin', 'C[C@H]1CCCC[C@@H]2CCCC[C@H]12'],
+    ['methyl-decalin mirror', 'C[C@@H]1CCCC[C@H]2CCCC[C@@H]12'],
+  ];
+
+  it('round-trips every ring chiral centre (matches RDKit canonical)', () => {
+    const RDKit = getRdkitModule();
+    for (const [name, smiles] of RING_CHIRAL_CASES) {
+      const direct = RDKit.get_mol(smiles)!.get_smiles();
+      expect(toSmiles(parseSmiles(smiles)), name).toBe(direct);
+    }
+  });
+
+  it('stores explicit labels on ring chiral centres', () => {
+    const m = parseSmiles('C1C[C@H](NC1)C(=O)O');
+    const labelled = m.atoms().filter((id) => m.getAtom(id).stereo?.bonds !== undefined);
+    expect(labelled).toHaveLength(1);
+    expect(m.validate()).toHaveLength(0);
+  });
+
+  it('keeps enantiomers distinct and round-trip stable', () => {
+    for (const [name, smiles] of RING_CHIRAL_CASES) {
+      const first = toSmiles(parseSmiles(smiles));
+      const second = toSmiles(parseSmiles(first));
+      expect(second, name).toBe(first);
+    }
+    const lPro = toSmiles(parseSmiles('C1C[C@H](NC1)C(=O)O'));
+    const dPro = toSmiles(parseSmiles('C1C[C@@H](NC1)C(=O)O'));
+    expect(lPro).not.toBe(dPro);
+  });
 });

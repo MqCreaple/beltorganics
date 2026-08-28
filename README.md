@@ -15,42 +15,67 @@ belts, and solubility-based separation.
 
 ## Status
 
-Chemistry engine started. The molecule data structure (roadmap step 1 in
-`AGENTS.md`) is implemented in `src/chem/`: a molecular graph stored on
-[graphology](https://graphology.github.io/) with element and formal charge on
-atoms, bond order on edges, tetrahedral stereo labels on 4-coordinate sp3
-carbons, and cis/trans labels on double bonds. It can fill implicit
-hydrogens (`addImplicitHydrogens`) and label hybridization of every
-non-hydrogen atom (`src/chem/hybridization.ts`), including the non-VSEPR
-cases (amide N, furan O, carboxylate, carbocations, conjugated carbanions), and detects conjugated π systems with their electron counts (incl. separate systems for the two perpendicular π bonds of a triple bond). The web shell (Vite +
-TypeScript) is scaffolded. Canonical naming and stereo-aware SMILES conversion (roadmap step 2) are substantially implemented in `src/chem/smiles.ts` (see `docs/smiles-naming.md`).
+Chemistry engine (roadmap steps 1-2 in `AGENTS.md`) lives in `src/chem/`:
 
-The game layer runs on **Phaser 4** (4.2.1, added as a dependency 2026-08-28;
-see `docs/research-game.md` section 10 for the decision).
+- **Molecule data structure** on [graphology](https://graphology.github.io/):
+  element and formal charge on atoms, bond order on edges, explicit
+  tetrahedral stereo labels on 4-coordinate sp3 carbons, and cis/trans labels
+  on double bonds. It fills implicit hydrogens (`addImplicitHydrogens`),
+  labels hybridization of every non-hydrogen atom (`src/chem/hybridization.ts`,
+  incl. the non-VSEPR amide N, furan O, carboxylate, carbocation and
+  conjugated-carbanion cases), and perceives conjugated pi systems with their
+  electron counts (`src/chem/conjugation.ts`, incl. separate systems for the
+  two perpendicular pi bonds of a triple bond).
+- **SMILES conversion** backed by **RDKit.js** (`@rdkit/rdkit`, the official
+  WASM build): `parseSmiles` / `toSmiles` round-trip with full
+  stereochemistry - including **ring chiral centres** (proline, cholesterol,
+  morphine, ...), which are ordered by RDKit's canonical CIP ranks so they
+  round-trip and render wedge/dash bonds. See `docs/smiles-naming.md`.
+- **Registry** (`src/chem/registry.ts`): the global SMILES -> molecule-graph
+  map, lazily rendered structure-diagram SVGs per substance, and a
+  substance-name cache (common name from PubChem, else IUPAC, with the NCI CIR
+  resolver as fallback) used for source labels.
 
-The world groundwork is in place too: an infinite grid recorded in 16x16 chunks
-(`src/world/`), chemical source blocks that hold a substance's SMILES formula, a
-global SMILES-to-molecule-graph registry (`src/chem/registry.ts`), and a playable
-**Phaser 4** shell (`src/game/`) with a gray grid, scroll zoom, and drag/WASD panning. Chemical sources are clickable: they open a centered block-UI panel (built with Preact/TSX); the molecule visualization is a placeholder for now.
-See `docs/game-world.md`.
+The game layer runs on **Phaser 4** (4.2.1; see `docs/research-game.md`
+section 10 for the decision). The world is an infinite grid recorded in 16x16
+chunks (`src/world/`); chemical source blocks hold a substance's SMILES, are
+clickable, and open a centered panel (built with Preact/TSX in `src/game/ui/`)
+showing the structure-diagram SVG, the substance name, formula and SMILES.
+Player-facing docs: `docs/game-world.md`.
 
 ## Quickstart
 
 ```sh
-npm install     # graphology + dev tooling
+npm install     # dependencies (RDKit.js WASM, Phaser 4, Preact, graphology, ...)
 npm test        # vitest
 npm run dev     # vite dev server
 npm run build   # typecheck + production build (dist/)
 ```
 
+The chemistry engine is pure logic with no DOM dependency, so it runs in Node
+tests and the browser alike.
+
+## Controls
+
+- Scroll: zoom toward the cursor
+- Drag or W/A/S/D: pan
+- Click a green chemical source: open its panel (structure-diagram SVG, name,
+  formula and SMILES table)
+- Escape or click outside: close the panel (shortcuts are recorded in
+  `src/game/shortcuts.ts`)
+
 ## Layout
 
 - `AGENTS.md` - design spec and agent conventions (read this first)
-- `docs/` - design and player docs (Typst), research notes (`docs/research-chemistry.md`, `docs/research-game.md`)
+- `docs/` - design and player docs (Typst), research notes
+  (`docs/research-chemistry.md`, `docs/research-game.md`)
 - `src/index.ts` - library entry
 - `src/main.ts` - web app entry (full-screen game canvas)
-- `src/chem/` - chemistry engine (molecule data structure; naming, properties,
-  thermodynamics planned)
-- `src/world/` - world simulation (infinite chunked grid, blocks; belts, chambers, ports next)
-- `src/game/` - Phaser 4 game shell (grid, camera, input, HUD)
+- `src/chem/` - chemistry engine (molecule data structure on graphology;
+  SMILES via RDKit.js; properties, thermodynamics planned)
+- `src/world/` - world simulation (infinite chunked grid, blocks; belts,
+  chambers, ports next)
+- `src/game/` - Phaser 4 game shell (grid, camera, input, HUD), the Preact/TSX
+  UI panels (`src/game/ui/`) and the keyboard-shortcut registry
+  (`src/game/shortcuts.ts`)
 - `test/` - Vitest suites

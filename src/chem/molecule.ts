@@ -1,5 +1,9 @@
 import Graph from 'graphology';
 import { ELEMENTS, isElementSymbol } from './elements';
+import type { MolecularFormula } from './formula';
+import { smilesFromMolecule } from './smiles-writer';
+import { getRdkitModule } from './rdkit';
+import type { RDMolecule } from './rdkit';
 import type {
   AtomAttributes,
   AtomId,
@@ -80,6 +84,11 @@ export class Molecule {
   readonly #graph = new Graph<AtomAttributes, BondAttributes>();
   #nextAtom = 0;
   #nextBond = 0;
+
+  // Lazy RDKit representation (see getRdkitMolecule).
+  #rdkit: RDMolecule | null = null;
+  /** False whenever the graph changed after #rdkit was built. */
+  #rdkitSynchronized = false;
 
   // ---------------------------------------------------------------------
   // Structural queries
@@ -171,6 +180,7 @@ export class Molecule {
     const attrs: AtomAttributes = { element, formalCharge: options.formalCharge ?? 0 };
     if (options.stereo !== undefined) attrs.stereo = options.stereo;
     this.#graph.addNode(id, attrs);
+    this.#markRdkitStale();
     return id;
   }
 
@@ -196,15 +206,18 @@ export class Molecule {
     const attrs: BondAttributes = { order };
     if (options.stereo !== undefined) attrs.stereo = options.stereo;
     this.#graph.addEdgeWithKey(id, source, target, attrs);
+    this.#markRdkitStale();
     return id;
   }
 
   removeAtom(atom: AtomId): void {
     this.#graph.dropNode(atom);
+    this.#markRdkitStale();
   }
 
   removeBond(bond: BondId): void {
     this.#graph.dropEdge(bond);
+    this.#markRdkitStale();
   }
 
   // ---------------------------------------------------------------------
@@ -213,20 +226,24 @@ export class Molecule {
 
   setFormalCharge(atom: AtomId, charge: number): void {
     this.#graph.setNodeAttribute(atom, 'formalCharge', charge);
+    this.#markRdkitStale();
   }
 
   setAtomStereo(atom: AtomId, stereo: TetrahedralStereo | undefined): void {
     if (stereo === undefined) this.#graph.removeNodeAttribute(atom, 'stereo');
     else this.#graph.setNodeAttribute(atom, 'stereo', stereo);
+    this.#markRdkitStale();
   }
 
   setBondOrder(bond: BondId, order: BondOrder): void {
     this.#graph.setEdgeAttribute(bond, 'order', order);
+    this.#markRdkitStale();
   }
 
   setBondStereo(bond: BondId, stereo: BondGeometryStereo | undefined): void {
     if (stereo === undefined) this.#graph.removeEdgeAttribute(bond, 'stereo');
     else this.#graph.setEdgeAttribute(bond, 'stereo', stereo);
+    this.#markRdkitStale();
   }
 
   // ---------------------------------------------------------------------
@@ -252,6 +269,36 @@ export class Molecule {
     return true;
   }
 
+  /**
+   * The RDKit (WASM) representation of this molecule, built lazily and cached.
+   *
+   * The molecule is constructed from a SMILES serialized by the game's own
+   * writer (`src/chem/smiles-writer.ts`) so RDKit perceives the stored
+   * stereochemistry. The cached value is rebuilt only after a structural
+   * mutation (any change to atoms, bonds, charges or stereo flips the sync
+   * flag), so rapid round-trips (toSmiles, the registry's rendered SVG) share
+   * a single RDKit molecule. The old handle is `.delete()`d on rebuild.
+   *
+   * Requires `initRdkit()` to have been awaited first (see `src/chem/rdkit.ts`).
+   */
+  getRdkitMolecule(): RDMolecule {
+    if (this.#rdkit === null || !this.#rdkitSynchronized) {
+      const smiles = smilesFromMolecule(this);
+      const next = getRdkitModule().get_mol(smiles);
+      if (next === null) {
+        throw new Error(`getRdkitMolecule: RDKit rejected the serialized molecule "${smiles}"`);
+      }
+      if (this.#rdkit !== null) this.#rdkit.delete();
+      this.#rdkit = next;
+      this.#rdkitSynchronized = true;
+    }
+    return this.#rdkit;
+  }
+
+  /** Marks the cached RDKit representation stale after a mutation. */
+  #markRdkitStale(): void {
+    this.#rdkitSynchronized = false;
+  }
   /**
    * Target bond-order sum ("capacity") an atom would need to be saturated,
    * used to derive implicit hydrogens.
@@ -302,31 +349,22 @@ export class Molecule {
   }
 
   /**
-   * Molecular formula in Hill order (C, H, then N, O), counting explicit
-   * atoms plus implicit hydrogens needed to saturate neutral atoms.
+   * Molecular formula as an element -> count dictionary (only elements
+   * actually present, e.g. `{ C: 2, H: 6, O: 1 }` for ethanol), counting
+   * explicit atoms plus implicit hydrogens needed to saturate neutral atoms.
+   * Serialization (Hill order, subscripts) is a rendering concern - see
+   * `src/chem/formula.ts` (`formulaToString`, `formulaParts`).
    */
-  molecularFormula(): string {
-    const heavy = new Map<Exclude<ElementSymbol, 'H'>, number>();
-    let hydrogens = 0;
+  molecularFormula(): MolecularFormula {
+    const formula: MolecularFormula = {};
     for (const id of this.atoms()) {
       const { element } = this.getAtom(id);
-      if (element === 'H') hydrogens += 1;
-      else heavy.set(element, (heavy.get(element) ?? 0) + 1);
-      hydrogens += this.implicitHydrogens(id);
+      formula[element] = (formula[element] ?? 0) + 1;
+      if (element === 'H') continue; // hydrogens carry no implicit hydrogens
+      const implicit = this.implicitHydrogens(id);
+      if (implicit > 0) formula.H = (formula.H ?? 0) + implicit;
     }
-    const parts: string[] = [];
-    const push = (symbol: ElementSymbol, count: number): void => {
-      parts.push(count === 1 ? symbol : `${symbol}${count}`);
-    };
-    // Hill order: C first, then H, then the rest alphabetically (N, O).
-    const carbon = heavy.get('C');
-    if (carbon !== undefined && carbon > 0) push('C', carbon);
-    if (hydrogens > 0) push('H', hydrogens);
-    for (const symbol of ['N', 'O'] as const) {
-      const count = heavy.get(symbol);
-      if (count !== undefined && count > 0) push(symbol, count);
-    }
-    return parts.join('');
+    return formula;
   }
 
   // ---------------------------------------------------------------------

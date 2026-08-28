@@ -51,9 +51,18 @@ substance that, once belts arrive, can be drawn out of.
 - It occupies one cell and is drawn as a green square (real textures come
   later).
 - It carries exactly **one property: the molecular formula of the substance it
-  contains** (shown as a label next to the square when you zoom in).
-- It carries a UI panel that opens when you click it (currently a placeholder;
-  the molecule visualization itself comes later).
+  contains**. Zooming in shows the substance's name next to the square: the
+  common name when PubChem has one (its `Title`), otherwise the IUPAC name
+  (NCI Chemical Identifier Resolver as fallback; resolved names are persisted
+  in the browser's localStorage, so reloads reuse them without the network);
+  the raw SMILES is the fallback label until the name arrives.
+- It carries a UI panel that opens when you click it: the substance's name
+  (common, else IUPAC) as the title, a table with the common name, IUPAC name,
+  chemical formula (with subscripted counts), and SMILES string (missing
+  values show "none"), and the
+  structure formula as an SVG rendered by the chemistry engine and cached in
+  the molecule registry (the first render parses and lays the molecule out;
+  later opens reuse the cached diagram).
 
 ## Molecules are SMILES strings
 
@@ -70,6 +79,15 @@ registry that maps each SMILES string to its molecule graph** (`Molecule` in
   engine.
 - The block's formula property is such a SMILES string; the graph for it can be
   looked up from the registry at any time.
+- The registry also looks up and caches each substance's **name**
+  (`fetchSubstanceName` / `substanceName`): the common name from PubChem's
+  `Title` property when available, else the IUPAC name, with the NCI Chemical
+  Identifier Resolver filling any missing field. Each name records its source
+  (PubChem or CIR) and is persisted to localStorage, so reloads reuse the
+  mapping without the network; a CIR-sourced name is re-checked against
+  PubChem on the next lookup and upgraded once PubChem answers. Names are
+  sanitized (Markush markup rejected) before caching; source labels show the
+  name instead of the raw SMILES once it resolves.
 
 ## Moving around the world
 
@@ -88,6 +106,8 @@ The camera floats over the infinite grid:
 - **Chunk borders** — a slightly brighter gray line every 16 cells, so you can
   see how the map is recorded.
 - **Blocks** — colored squares on their cells (chemical sources are green).
+- **Labels** — zooming in on a source shows its name (PubChem common/IUPAC,
+  cached in the registry), falling back to the SMILES while the name loads.
 - **Block UI** — hover a source (the cursor turns into a pointer) and click it
   to open a centered panel with the block's UI; click outside the panel to
   close it.
@@ -106,7 +126,8 @@ npm run build # typecheck + production build into dist/
 ## Where things live in the code
 
 - `src/chem/` — the chemistry engine (molecule graphs, SMILES, properties).
-- `src/chem/registry.ts` — the global SMILES → molecule-graph registry.
+- `src/chem/registry.ts` — the global SMILES → molecule-graph registry (plus the
+  lazily rendered structure-diagram SVG and the IUPAC-name cache).
 - `src/world/` — the engine of the world: `types.ts` (chunk size, block kinds),
   `blocks.ts` (chemical source), `chunk.ts` (16×16 chunk + coordinate math),
   `world.ts` (the infinite chunked map and block placement).
@@ -114,8 +135,8 @@ npm run build # typecheck + production build into dist/
   `scene.ts` (the scene: grid/blocks rendering, input, HUD), `game.ts`
   (wraps the Phaser.Game and shares the world).
 - `src/game/ui/` — Preact/TSX UI: `block-panel.tsx` (the centered HUD overlay
-  and its open/close), `molecule-panel.tsx` (molecule visualization
-  placeholder), `source-block-ui.tsx` (builds the `BlockUI` for sources).
+  and its open/close), `molecule-panel.tsx` (structure-diagram SVG viewer for
+  a substance), `source-block-ui.tsx` (builds the `BlockUI` for sources).
 - `src/main.ts` — web entry; creates the game (Phaser canvas) in `#app`, a
   demo world with a few chemical sources, and starts it.
 
@@ -123,9 +144,9 @@ npm run build # typecheck + production build into dist/
 
 - The world and chemistry engines are framework-free (no DOM, no game engine),
   so they run in Node tests and stay portable. The game shell runs on
-  **Phaser 4** (installed 2026-08-28), so the next step — molecule
-  visualization — can be built directly in Phaser; the world layer feeds it
-  as-is.
+  **Phaser 4** (installed 2026-08-28). The structure-diagram SVG already
+  renders in the block panels (RDKit via the registry); a 3D molecule view
+  in Phaser can come later, fed by the same registry.
 - Block UI panels are built with **Preact** (JSX/TSX via @preact/preset-vite)
   so components stay modular and reusable; the world engine only carries a
   `BlockUI` function and never touches the UI framework.

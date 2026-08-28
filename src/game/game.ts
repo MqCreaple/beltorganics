@@ -6,7 +6,7 @@ import type { GameSceneOptions } from './scene';
 export interface GameOptions extends GameSceneOptions {
   /** DOM element (or its id) that will contain the Phaser canvas. */
   parent?: HTMLElement | string;
-  /** Background color of the game canvas. Default '#12141a'. */
+  /** Background color of the game canvas. Default '#f2f4f8'. */
   backgroundColor?: string;
 }
 
@@ -31,7 +31,7 @@ export class Game {
     this.phaser = new Phaser.Game({
       type: Phaser.AUTO,
       parent: options.parent ?? undefined,
-      backgroundColor: options.backgroundColor ?? '#12141a',
+      backgroundColor: options.backgroundColor ?? '#f2f4f8',
       scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,

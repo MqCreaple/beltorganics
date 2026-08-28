@@ -1,5 +1,5 @@
-﻿import { describe, expect, it } from 'vitest';
-import { Molecule, conjugatedPiSystemOf, conjugatedPiSystems } from '../src/chem';
+import { describe, expect, it } from 'vitest';
+import { Molecule, conjugatedPiSystemOf, conjugatedPiSystems, formulaToString } from '../src/chem';
 import type { ConjugatedPiSystem } from '../src/chem';
 
 function electronSummary(systems: ConjugatedPiSystem[]): string {
@@ -167,7 +167,7 @@ describe('conjugated π systems', () => {
     m.addBond(c2, c3); // sp-sp2 single bond carries the conjugation
     m.addBond(c3, c4, 2); // C=C
     m.addImplicitHydrogens();
-    expect(m.molecularFormula()).toBe('C4H4');
+    expect(formulaToString(m.molecularFormula())).toBe('C4H4');
     // The alkyne contributes only one of its two π bonds to the chain (the
     // one coplanar with the C=C); the other stays localized on the alkyne.
     expect(electronSummary(conjugatedPiSystems(m))).toBe('2a/2e, 4a/4e');
@@ -187,7 +187,7 @@ describe('conjugated π systems', () => {
     m.addBond(c4, c5); // sp-sp2 single bond
     m.addBond(c5, c6, 2); // C=C
     m.addImplicitHydrogens();
-    expect(m.molecularFormula()).toBe('C6H6');
+    expect(formulaToString(m.molecularFormula())).toBe('C6H6');
     // The two π bonds of the triple bond are perpendicular. The game assumes
     // the planar, maximally conjugated conformer, so only one alkyne π bond is
     // "chain-active": both double bonds conjugate with it, giving one extended
@@ -206,7 +206,7 @@ describe('conjugated π systems', () => {
     m.addBond(c1, c2, 2);
     m.addBond(c2, c3, 2);
     m.addImplicitHydrogens();
-    expect(m.molecularFormula()).toBe('C3H4');
+    expect(formulaToString(m.molecularFormula())).toBe('C3H4');
     // The two double bonds share a carbon but their π orbitals are mutually
     // perpendicular (allene), so each stays its own 2-electron system.
     expect(electronSummary(conjugatedPiSystems(m))).toBe('2a/2e, 2a/2e');

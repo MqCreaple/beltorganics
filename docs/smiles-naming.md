@@ -1,4 +1,4 @@
-# SMILES-based canonical names
+﻿# SMILES-based canonical names
 
 Design note for roadmap step 2 ("Identity & naming" in `AGENTS.md`). The
 player-facing promise lives in `docs/01-molecules.typ` (canonical names use a
@@ -11,7 +11,7 @@ This note answers two questions for step 2:
 
 1. What is the rough idea of SMILES (enough to read and generate names, not the
    full spec)?
-2. Which npm library turns the game's molecular graph into a canonical SMILES
+2. Which library turns the game's molecular graph into a canonical SMILES
    string, and what does the game still have to compute itself?
 
 ## 1. The rough idea of SMILES
@@ -48,194 +48,175 @@ spec (sources in section 5); what the game needs to know:
   "same canonical name <=> same molecule" - exactly the identity requirement of
   roadmap step 2.
 
-## 2. Use a library instead of writing the full SMILES rules
+## 2. Use RDKit.js instead of writing the full SMILES rules
 
 Implementing the full SMILES grammar plus canonicalization is overkill for the
-game. There is a TypeScript-native npm library that converts a molecular
-structure straight to canonical SMILES:
+game. The chemistry backend is **RDKit.js** (`@rdkit/rdkit`, BSD-3, the
+official RDKit WASM build; ~3.5k GitHub stars, ~266k npm downloads/month): it
+parses SMILES (including stereo tokens), canonicalizes, computes 2D
+coordinates, and renders structure-diagram SVG.
 
-**`openchem`** (npm, MIT, ~0.2.x, first release 2026, no runtime dependencies,
-works in Node and the browser; repo `rajeshg/openchem`):
+- `RDKit.get_mol(input)` builds a molecule from SMILES / SMARTS / molfile /
+  JSON and returns a `JSMol` handle (`.delete()` frees it).
+- `mol.get_smiles()` returns a canonical, order-independent SMILES (RDKit's
+  flavour: ethanol `CCO` - which matches the player docs).
+- `mol.get_json()` returns a compact molecule JSON: atoms with element (`z`),
+  formal charge (`chg`), implicit-H count (`impHs`) and tetrahedral sense
+  (`stereo: 'cw' | 'ccw'`), bonds with order (`bo`) and double-bond geometry
+  (`stereo: 'cis' | 'trans'` + `stereoAtoms`), plus aromatic atom/bond lists.
+  The game reads this JSON in `parseSmiles`.
+- `mol.get_svg()` returns a 2D structure-diagram SVG (white background rect
+  stripped by the registry so the SVG stays transparent; the hosting panel
+  supplies the background).
 
-- `generateSMILES({ atoms, bonds }, true)` returns a canonical, order
-  independent SMILES from a plain object that maps 1:1 onto the game's
-  graphology graph.
-- Tetrahedral stereo via `atom.chiral = '@' | '@@'`; E/Z via
-  `bond.stereo = 'up' | 'down'` on the adjacent single bonds (both verified
-  below).
-- Handles bracket atoms (charge, explicit H), disconnected components, ring
-  closures and `%nn` ring numbers.
-- Canonicalization is Morgan-based with RDKit-style tie-breaking (the author
-  reports 100% RDKit agreement on a 325-molecule test set).
+The WASM module loads asynchronously (`src/chem/rdkit.ts`): `initRdkit()` is
+awaited once at startup (web entry, `test/setup.ts` for tests) and the module
+is cached; the `.wasm` binary is resolved per environment (browser: Vite asset
+via `?url`; Node: resolved next to the package on disk).
 
-Mapping from the game's graph (`src/chem/types.ts`) to openchem:
+### The game's adapter (`src/chem/smiles.ts` + `src/chem/smiles-writer.ts`)
 
-| Game concept | openchem field |
-|---|---|
-| atom element C/H/O/N | `symbol` + `atomicNumber` (6 / 1 / 8 / 7) |
-| atom `formalCharge` | `charge`; set `isBracket: true` when non-zero |
-| explicit H neighbours (the game stores cations' H explicitly) | fold their count into the heavy atom's `hydrogens` and drop the H atoms from the openchem structure; keep pure-hydrogen molecules (H2) as `[H][H]` |
-| bond order 1 / 2 / 3 | `type: 'single' \| 'double' \| 'triple'` |
-| `TetrahedralStereo` (4 ordered bonds, fixed counterclockwise convention) | `chiral: '@' \| '@@'`, derived with `tokenForOrder` from the label and the neighbour order openchem emits (section 4) |
-| `BondGeometryStereo` cis / trans | `stereo: 'up' \| 'down'` on the two single bonds adjacent to the double bond (section 4) |
+- `toSmiles(molecule, { canonical = true })` - the game serializes its own
+  graph into a *valid* (not canonical) SMILES with stereo tokens
+  (`src/chem/smiles-writer.ts`), feeds it to `get_mol`, and returns
+  `mol.get_smiles()` (canonical). The serialized molecule is cached on the
+  `Molecule` (`getRdkitMolecule()`) and invalidated by any structural
+  mutation, so repeated canonicalization reuses one RDKit handle.
+- `parseSmiles(smiles)` - `get_mol(smiles)` -> `get_json()` -> game graph:
+  explicit hydrogens materialized from `impHs`, aromatic rings stored in
+  kekulé form (alternating single/double bonds as RDKit reports them),
+  tetrahedral labels from RDKit's canonical CIP data (`cipRanks`/`cipCodes`,
+  see section 4.2), and double-bond geometry as plain `'cis'`/`'trans'`
+  labels.
 
-Implemented (2026-08-27) in `src/chem/smiles.ts`, with the tetrahedral label
-conversion helpers in `src/chem/tetrahedral.ts`:
+The library stays behind `src/chem/smiles.ts` (and the writer in
+`src/chem/smiles-writer.ts`), so it can be swapped. Tests:
+`test/smiles.test.ts` (structure-preservation + stereo round-trips) and
+`test/tetrahedral.test.ts` (geometric conversion tests).
 
-- `toSmiles(molecule, { canonical = true })` - game graph -> canonical SMILES
-  (openchem's flavour). Tetrahedral tokens are derived deterministically: one
-  achiral canonical pass reveals the neighbour order openchem will emit, and
-  `tokenForOrder` converts the stored label to that viewpoint (no search).
-- `parseSmiles(smiles)` - SMILES -> game graph (explicit hydrogens, kekulé
-  aromatic rings, tetrahedral labels built from the Daylight neighbour-order
-  rule and the `@`/`@@` token).
+Alternatives considered and rejected:
 
-The library stays behind that module, so it can be swapped. Tests:
-`test/smiles.test.ts` (structure-preservation) and `test/tetrahedral.test.ts`
-(geometric conversion tests).
-
-Alternatives considered:
-
-- **`openchemlib`** (BSD-3, maintained by Zakodium, mature) can build molecules
-  programmatically and emit `toSmiles()` / `toIsomericSmiles()`; its flavour
-  happens to match the player docs (`CCO`). But it is a GWT-transpiled Java
-  port (heavy, awkward API: `new Molecule(256, 256)`, surprising bond-order
-  argument handling, and a `CC(O)=O` flavour for acetic acid), so it is a
-  fallback rather than the first choice.
-- **`@rdkit/rdkit`**: the RDKit WASM build - extremely capable but a large,
-  asynchronously loaded WASM module, and real-chemistry only.
+- **`openchem`** (the previous backend, `rajeshg/openchem`): tiny (~2 stars,
+  179 downloads/month, last push 2026-01), poor SVG rendering, and documented
+  stereo bugs (chiral nesting cap ~42, conjugated E/Z corruption). Replaced by
+  RDKit.js 2026-08-28.
+- **`openchemlib`** (BSD-3, Zakodium): mature pure-JS port of OpenChemLib with
+  SMILES/IDCode + `toSVG`/canvas depiction, but no IUPAC names and lower
+  quality depiction than RDKit; kept as a fallback.
 - **Custom emitter**: viable (Morgan canonicalization is a small pure-JS
-  algorithm, already referenced in `docs/research-chemistry.md` section 1) - keep as the
-  fallback if the flavour decision in section 3 forces a `CCO`-style output.
-
-Risk note: openchem is young (0.2.x, single maintainer). Keep it behind the
-adapter, pin the version, and add a small round-trip test suite (build graph ->
-SMILES -> parse -> same graph) so a library change is cheap.
+  algorithm, `docs/research-chemistry.md` section 1) - kept as the fallback if
+  the library flavour ever has to change.
 
 ## 3. Sample molecules and their canonical SMILES
 
-Verified 2026-08-27 with openchem 0.2.17: each molecule was built as a plain
-`{ atoms, bonds }` object (game graph shape) and passed to
-`generateSMILES(mol, true)`. "Common form" is the canonical form most chemistry
-tools (RDKit/PubChem) emit for the same molecule.
+Verified 2026-08-28 with RDKit.js 2025.03.4. "Common form" is the canonical
+form most chemistry tools emit; with RDKit.js the game's canonical names match
+the common form (and the player docs).
 
-| Molecule | Game graph | openchem canonical | Common form |
-|---|---|---|---|
-| methane | C | `C` | `C` |
-| water | O | `O` | `O` |
-| ammonia | N | `N` | `N` |
-| ethanol | C-C-O | `OCC` | `CCO` |
-| dimethyl ether | C-O-C | `O(C)C` | `COC` |
-| ethene | C=C | `C=C` | `C=C` |
-| ethyne | C#C | `C#C` | `C#C` |
-| carbon dioxide | O=C=O | `O=C=O` | `O=C=O` |
-| acetic acid | C-C(=O)-O | `O=C(O)C` | `CC(=O)O` |
-| acetate anion | C-C(=O)-O- | `O=C([O-])C` | `CC(=O)[O-]` |
-| propan-2-ol | C-C(O)-C | `OC(C)C` | `CC(C)O` |
-| acetone | C-C(=O)-C | `O=C(C)C` | `CC(=O)C` |
-| 1-propanol | C-C-C-O | `OCCC` | `CCCO` |
-| methylamine | C-N | `NC` | `CN` |
-| cyclohexane | C6 ring | `C1CCCCC1` | `C1CCCCC1` |
-| benzene (kekule input) | C6 ring, alternating `=` | `c1ccccc1` | `c1ccccc1` |
-| (Z)-but-2-ene (cis) | C-C=C-C, cis | `C/C=C\C` | `C/C=C\C` |
-| (E)-but-2-ene (trans) | C-C=C-C, trans | `C/C=C/C` | `C/C=C/C` |
-| L-alanine | N-C(C)-C(=O)-O, one chirality | `N[C@@H](C)C(=O)O` | `N[C@@H](C)C(=O)O` |
-| D-alanine | same graph, other chirality | `N[C@H](C)C(=O)O` | `N[C@H](C)C(=O)O` |
-| hydrogen | H-H | `[H][H]` | `[H][H]` |
-| ammonium | N+ + 4 H | `[NH4+]` | `[NH4+]` |
-| hydroxide | O- + 1 H | `[OH-]` | `[OH-]` |
-| glycine zwitterion | +H3N-C-C(=O)-O- | `[NH3+]CC(=O)[O-]` | `[NH3+]CC(=O)[O-]` |
+| Molecule | Game graph | RDKit canonical |
+|---|---|---|
+| methane | C | `C` |
+| water | O | `O` |
+| ammonia | N | `N` |
+| ethanol | C-C-O | `CCO` |
+| dimethyl ether | C-O-C | `COC` |
+| ethene | C=C | `C=C` |
+| ethyne | C#C | `C#C` |
+| carbon dioxide | O=C=O | `O=C=O` |
+| acetic acid | C-C(=O)-O | `CC(=O)O` |
+| acetate anion | C-C(=O)-O- | `CC(=O)[O-]` |
+| propan-2-ol | C-C(O)-C | `CC(C)O` |
+| acetone | C-C(=O)-C | `CC(=O)C` |
+| 1-propanol | C-C-C-O | `CCCO` |
+| methylamine | C-N | `CN` |
+| cyclohexane | C6 ring | `C1CCCCC1` |
+| benzene (kekule input) | C6 ring, alternating `=` | `c1ccccc1` |
+| (Z)-but-2-ene (cis) | C-C=C-C, cis | `C/C=C\C` |
+| (E)-but-2-ene (trans) | C-C=C-C, trans | `C/C=C/C` |
+| L-alanine | N-C(C)-C(=O)-O, one chirality | `C[C@H](N)C(=O)O` |
+| D-alanine | same graph, other chirality | `C[C@@H](N)C(=O)O` |
+| hydrogen | H-H | `[H][H]` |
+| ammonium | N+ + 4 H | `[NH4+]` |
+| hydroxide | O- + 1 H | `[OH-]` |
+| glycine zwitterion | +H3N-C-C(=O)-O- | `[NH3+]CC(=O)[O-]` |
 
 Notes on the table:
 
-- **Canonical flavour (decision needed).** openchem's canonical form starts at
-  the most "hetero" atom, so ethanol is `OCC` and dimethyl ether is `O(C)C`,
-  while the player docs currently promise `CCO` / `COC`. Both are valid
-  canonical SMILES (same molecule <=> same string); the representative is a
-  convention. Options:
-  1. Adopt openchem's flavour and update the examples in
-     `docs/01-molecules.typ` to `OCC` / `O(C)C`.
-  2. Keep `CCO` / `COC` and implement a small custom emitter with a
-     carbon-first root tie-break, using openchem as a test oracle.
-  If the library is adopted, option 1 is recommended: it removes the custom
-  code, and `OCC` is still perfectly readable SMILES.
-- **Aromaticity.** openchem perceives aromaticity from kekule double bonds, so
-  game benzene (stored with alternating single/double bonds and no aromatic
-  flags, see `docs/research-chemistry.md` section 8) is emitted as `c1ccccc1`. Accepting
-  that is simplest; emitting kekule (`C1=CC=CC=C1`) would need aromaticity
-  perception kept off or a post-processing step. This is a step-2 decision.
-- **Stereo format.** `@` / `@@` and `/` / `\` are confirmed as the emitted
-  tokens, matching the candidate format in `docs/research-chemistry.md` section 7.
-- **Chirality labels.** The table shows the two possible tokens. A parsed
-  label stores the four bonds in the Daylight string order under a fixed
-  counterclockwise convention: `@` (counterclockwise) is stored as-is, `@@`
-  (clockwise) as a swapped order (an odd permutation is the mirror image), so
-  no direction field is needed.
+- **Canonical flavour.** RDKit's canonical form starts carbon-first for
+  hetero chains, so ethanol is `CCO` and dimethyl ether `COC` - matching the
+  player docs (`docs/01-molecules.typ`). No flavour decision is left open.
+- **Aromaticity.** RDKit aromatizes kekule input, so game benzene (stored with
+  alternating single/double bonds and no aromatic flags) canonicalizes to
+  `c1ccccc1`; the parse side stores the kekulé form RDKit's JSON reports.
+- **Stereo format.** `@` / `@@` and `/` / `\` are the emitted tokens, matching
+  the candidate format in `docs/research-chemistry.md` section 7.
+- **Chirality labels.** The table shows the two possible canonical tokens. The
+  game stores a label as the four bonds in an arbitrary order under a fixed
+  counterclockwise convention (mirror image = odd permutation, no direction
+  field), and the writer derives `@` / `@@` for the order its own serialization
+  happens to emit (`tokenForOrder`), so the same enantiomer written any valid
+  way canonicalizes to the same string.
 
 ## 4. What the game still has to compute (the adapter)
 
-The library does string generation and canonicalization; the three pieces
-below are implemented in `src/chem/smiles.ts` and were the real content of the
-naming work in roadmap step 2:
+The library does parsing, canonicalization and drawing; the pieces below are
+implemented in `src/chem/` and were the real content of the naming work in
+roadmap step 2:
 
-1. **Chiral token mapping.** The game stores `TetrahedralStereo` as an
-   explicit local-chirality label: the four incident bonds in an arbitrary
-   order. The winding convention is fixed (looking down `bonds[0]` from the
-   substituent toward the centre, the three trailing bonds wind
-   counterclockwise), so the mirror image is just an odd permutation of the
-   order and no direction field is stored; `bonds` is omitted for an
-   unspecified centre. Parsing builds the label from the Daylight
-   neighbour-order rule (implicit-H placement, branch order) and the `@`/`@@`
-   token (`@@` swaps two trailing bonds to keep the convention), so the same
-   enantiomer written any valid way yields an equivalent label (compared via
-   the order indicator in `src/chem/tetrahedral.ts`). Serializing derives the
-   token directly:
-   `toSmiles` generates the achiral canonical string, reads the order in which
-   openchem emits each centre's neighbours, and calls `tokenForOrder`.
-   Matching the game graph to the re-parsed string uses global iterative
-   refinement (Weisfeiler-Lehman / Morgan labels with integer hashing) because
-   local fingerprints are identical for every centre of a regular chain; a
-   bounded per-centre correction loop then fixes any centres whose token came
-   out wrong (matching is only determined up to graph automorphisms, e.g. the
-   reflection of a symmetric chain or the end centres whose terminal and side
-   groups swap). Caveat (verified 2026-08-27): openchem's canonicalisation
-   does *not* re-derive tetrahedral tokens when it reorders atoms - the same
-   enantiomer written differently can canonicalize to different tokens - which
-   is exactly why the neighbour order is learned from an achiral pass instead
-   of trusting openchem's token handling.
-2. **E/Z token mapping.** The game stores cis / trans on the double bond. In a
-   conjugated chain a single bond is shared by two double bonds, so the `up` /
-   `down` tokens are solved as a constraint system along each chain
-   (`token(second) = token(first) XOR (cis ? 1 : 0)`), with the phase chosen
-   canonically so a re-parsed graph reproduces the same string. Verified:
-   equal values on both sides emit trans `C/C=C/C`, different values emit cis
-   `C/C=C\C`. 'either' / 'unspecified' emit no directional bonds. Requires
-   exactly one non-hydrogen substituent on each end of the double bond
-   (otherwise the game's plain cis/trans label is under-specified and
-   serialization throws).
-3. **Hydrogen folding.** Drop explicit H atoms attached to heavy atoms and fold
-   their count into the heavy atom's `hydrogens` field; charged atoms must be
-   bracketed (`[NH4+]`, `[OH-]`); keep pure-hydrogen molecules as `[H][H]`.
-   The parser materializes parsed hydrogens as explicit atoms (cations keep
-   theirs), matching the game's convention.
+1. **Graph -> SMILES writer (`src/chem/smiles-writer.ts`).** RDKit.js has no
+   graph constructor, so the game serializes its own graph: bracket atoms with
+   explicit H counts and charges (`[CH3]`, `[NH4+]`, `[O-]`), a DFS emitting
+   branches before the continuation (so `(...)` attaches to the right atom),
+   ring-closure digits for non-tree bonds, and stereo tokens (below). The
+   output is valid but not canonical - `get_smiles()` canonicalizes.
+2. **Chiral token mapping.** The game stores `TetrahedralStereo` as an explicit
+   local-chirality label (four incident bonds in an arbitrary order, fixed
+   counterclockwise winding convention; mirror image = odd permutation). The
+   writer computes the four neighbours in Daylight string order (from, implicit
+   H, ring-closure neighbours in digit order, branches, continuation) and calls
+   `tokenForOrder` to emit `@` / `@@`. Parsing needs a *canonical*
+   reference order for the label, because RDKit's JSON `'cw'`/`'ccw'` sense
+   is relative to the *input string's* neighbour order and is not a canonical
+   descriptor (the same enantiomer can parse to either sense). The JSON's
+   `rdkitRepresentation` extension provides exactly that: `cipCodes` (R/S)
+   and `cipRanks` (per-atom CIP priority, higher = higher priority). The
+   parser orders each centre's four neighbours by CIP priority (implicit H
+   last) and maps (R) to the mirror of that order and (S) to the order as-is
+   (pinned empirically by the stereo round-trip tests). This is a single-pass
+   parse - no re-serialization, no second RDKit call - and it is what makes
+   ring chiral centres (proline, cholesterol, morphine, ...) round-trip and
+   render wedges.
+3. **E/Z token mapping.** The game stores cis / trans on the double bond. The
+   writer emits equal directional tokens on both substituent single bonds for
+   trans (`C/C=C/C`) and different ones for cis (`C/C=C\C`); parsing reads
+   `'cis'` / `'trans'` from the JSON bond stereo. Requires exactly one
+   non-hydrogen substituent on each end of the double bond (otherwise the
+   game's plain cis/trans label is under-specified and serialization throws);
+   a substituent bond that is a ring closure is not supported.
+4. **Hydrogen folding.** The writer folds explicit H neighbours plus missing
+   implicit H into each heavy atom's bracket H count; charged atoms are
+   bracketed (`[NH4+]`, `[O-]`); pure-hydrogen molecules stay as `[H][H]`. The
+   parser materializes parsed hydrogens as explicit atoms, matching the game's
+   convention.
 
-Known limitations:
+Known limitations (RDKit.js, this WASM build):
 
-- Tetrahedral stereo on ring atoms is not supported yet (the ring-closure
-  neighbour order is not derivable from atom order), so ring chiral centres
-  parse as 'unspecified' and serialization throws.
-- openchem's canonical writer caps the nesting depth of chiral branches at
-  ~42 - verified that a single chain with more than ~42 chiral centres drops
-  tokens during canonicalisation (42 of 98 survive for a 100-carbon chain), so
-  the longest single-chain chiral round-trip that is lossless is 42 centres.
-  The conversion algorithm itself is O(n) per pass (stress tests in
-  `test/smiles.test.ts`); the cap is a library limitation.
-- openchem's E/Z canonicalisation corrupts *conjugated* chains with >= 3
-  double bonds (verified: `C/C=C\C=C\C=C/C` is rewritten to
-  `C/C=C/C=C/C=C/C`, i.e. cis becomes trans). Non-conjugated double bonds
-  round-trip losslessly at scale (~500 verified), so the long-chain E/Z stress
-  test uses double bonds separated by two single bonds. Documented in the
-  stress-test comments.
+- Tetrahedral stereo on ring atoms is supported via the CIP-rank method
+  described in 4.2 (ring chiral centres such as proline, cholesterol and
+  morphine round-trip and render wedges), as long as RDKit's JSON includes the
+  CIP data (cipRanks/cipCodes); centres it cannot label fall back to the
+  acyclic 'cw'/'ccw' heuristic.
+- Canonical SMILES generation (`get_smiles`) overflows the JS stack around
+  ~500-800 atoms, and a failed call can poison the wasm instance (subsequent
+  calls on the same module crash with "memory access out of bounds"). The
+  exact ceiling depends on structure (measured 2026-08-28 with fresh wasm
+  instances): a linear E/Z chain overflows at 559 heavy atoms (550 works),
+  while a shallow-branching chiral chain still round-trips at 2696 heavy
+  atoms. The stress tests sit just inside the observed limits (248 chiral
+  centres = ~750 heavy atoms; 180 non-conjugated double bonds = 541 heavy
+  atoms) and each asserts a generous time budget (~0.5 s observed). The
+  previous openchem backend had different caps (chiral nesting ~42,
+  conjugated E/Z corruption).
 
 ## 5. Sources
 
@@ -251,53 +232,6 @@ Known limitations:
   notation" (CANON + GENES) - see `docs/research-chemistry.md` section 1
 - O'Boyle, "Towards a Universal SMILES representation - A standard method to
   generate canonical SMILES based on the InChI", J. Cheminform. 2012, 4:22
-- openchem (npm): https://www.npmjs.com/package/openchem ;
-  repository: https://github.com/rajeshg/openchem
-- openchemlib (npm): https://www.npmjs.com/package/openchemlib ;
+- RDKit.js: https://github.com/rdkit/rdkit-js ; npm package `@rdkit/rdkit`
+- openchemlib (fallback): https://www.npmjs.com/package/openchemlib ;
   API docs: https://cheminfo.github.io/openchemlib-js/
-
-## 6. Known openchem issues (candidates for upstream bug reports)
-
-Three reproducible openchem bugs were found while building and stress-testing
-the conversions (2026-08-28, openchem 0.2.17). Each has a minimal
-reproduction, the expected result and the observed result, ready to be turned
-into a GitHub issue.
-
-### Issue 1: canonical writer drops chiral tokens beyond ~42 nested branches
-
-- **Reproduction:** build a linear carbon chain of length N (e.g. 100) with
-  an ethyl side group on every interior carbon and a tetrahedral label on
-  every interior centre (98 centres at N = 100), then call
-  `generateSMILES(molecule, true)`.
-- **Expected:** all N - 2 chiral tokens (`[C@H]` / `[C@@H]`) are emitted.
-- **Observed:** only 42 tokens survive (verified at N = 50 and N = 100). The
-  canonical form is a deeply nested branch (`CC[C@H]([C@H](CC)...`) and the
-  writer stops at a nesting depth of about 42. Independent of the token
-  pattern (all `@` or random).
-- **Impact:** a single molecule with more than ~42 chiral centres cannot be
-  canonicalised losslessly, so long chiral chains cannot round-trip.
-
-### Issue 2: conjugated E/Z canonicalisation rewrites cis to trans
-
-- **Reproduction:** `parseSMILES("C/C=C\C=C\C=C/C")` followed by
-  `generateSMILES(molecule, true)`.
-- **Expected:** the double-bond geometry is preserved.
-- **Observed:** `C/C=C/C=C/C=C/C` - the cis double bonds become trans. Chains
-  with 2 double bonds (`C/C=C\C=C/C`) are preserved; non-conjugated double
-  bonds are preserved at any tested scale (~500).
-- **Impact:** conjugated chains (alternating single/double bonds) with 3 or
-  more double bonds lose their E/Z geometry, so they cannot round-trip.
-
-### Issue 3: tetrahedral tokens are not re-derived when atoms are reordered
-
-- **Reproduction:** the same enantiomer written in different valid SMILES
-  canonicalises to different tokens. L-alanine written as
-  `N[C@@H](C)C(=O)O` stays `N[C@@H](C)C(=O)O`, but `N[C@H](C(=O)O)C` (also
-  L-alanine) canonicalises to `N[C@H](C)C(=O)O`.
-- **Expected:** both forms canonicalise to the same string (the token is
-  re-derived for the new neighbour order).
-- **Observed:** the `@`/`@@` token is kept verbatim while the neighbour order
-  is rewritten, silently flipping the enantiomer (3 of the 5 Daylight
-  L-alanine forms canonicalise to a D-alanine form).
-- **Impact:** two valid SMILES of the same enantiomer get different canonical
-  names; the game works around this by interpreting stereo itself (section 4).

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Molecule, toSmiles } from '../src/chem';
+import { Molecule, parseSmiles, toSmiles } from '../src/chem';
 import type { BondOrder, ElementSymbol, TetrahedralStereo } from '../src/chem';
 
 function saturate(m: Molecule, atom: string): void {
@@ -69,7 +69,7 @@ describe('molecular formula and hydrogens', () => {
     const o = m.addAtom('O');
     m.addBond(o, m.addAtom('H'));
     m.addBond(o, m.addAtom('H'));
-    expect(m.molecularFormula()).toBe('H2O');
+    expect(m.molecularFormula()).toEqual({ H: 2, O: 1 });
     expect(m.implicitHydrogens(o)).toBe(0);
   });
 
@@ -80,7 +80,7 @@ describe('molecular formula and hydrogens', () => {
     const o = m.addAtom('O');
     m.addBond(c1, c2);
     m.addBond(c2, o);
-    expect(m.molecularFormula()).toBe('C2H6O');
+    expect(m.molecularFormula()).toEqual({ C: 2, H: 6, O: 1 });
   });
 
   it('explicit-hydrogen ethanol is also C2H6O', () => {
@@ -93,14 +93,14 @@ describe('molecular formula and hydrogens', () => {
     saturate(m, c1);
     saturate(m, c2);
     saturate(m, o);
-    expect(m.molecularFormula()).toBe('C2H6O');
+    expect(m.molecularFormula()).toEqual({ C: 2, H: 6, O: 1 });
   });
 
   it('benzene is C6H6', () => {
     const m = new Molecule();
     const ring = Array.from({ length: 6 }, () => m.addAtom('C'));
     for (let i = 0; i < 6; i++) m.addBond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
-    expect(m.molecularFormula()).toBe('C6H6');
+    expect(m.molecularFormula()).toEqual({ C: 6, H: 6 });
     expect(m.validate()).toHaveLength(0);
   });
 
@@ -108,7 +108,7 @@ describe('molecular formula and hydrogens', () => {
     const m = new Molecule();
     const c = m.addAtom('C');
     for (let i = 0; i < 4; i++) m.addBond(c, m.addAtom('H'));
-    expect(m.molecularFormula()).toBe('CH4');
+    expect(m.molecularFormula()).toEqual({ C: 1, H: 4 });
   });
 });
 
@@ -177,7 +177,7 @@ describe('serialization', () => {
     const restored = Molecule.fromJSON(m.toJSON());
     expect(restored.atomCount).toBe(m.atomCount);
     expect(restored.bondCount).toBe(m.bondCount);
-    expect(restored.molecularFormula()).toBe('C2H7NO');
+    expect(restored.molecularFormula()).toEqual({ C: 2, H: 7, N: 1, O: 1 });
     const restoredChiral = restored
       .atoms()
       .find(
@@ -209,7 +209,7 @@ describe('addImplicitHydrogens', () => {
     water.addBond(o, water.addAtom('H'));
     const added = water.addImplicitHydrogens();
     expect(added).toHaveLength(0);
-    expect(water.molecularFormula()).toBe('H2O');
+    expect(water.molecularFormula()).toEqual({ H: 2, O: 1 });
     expect(water.validate()).toHaveLength(0);
   });
 
@@ -222,7 +222,7 @@ describe('addImplicitHydrogens', () => {
     m.addBond(c2, o);
     const added = m.addImplicitHydrogens();
     expect(added).toHaveLength(6); // 3 + 2 + 1
-    expect(m.molecularFormula()).toBe('C2H6O');
+    expect(m.molecularFormula()).toEqual({ C: 2, H: 6, O: 1 });
     expect(m.validate()).toHaveLength(0);
   });
 
@@ -232,7 +232,7 @@ describe('addImplicitHydrogens', () => {
     for (let i = 0; i < 6; i++) m.addBond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
     const added = m.addImplicitHydrogens();
     expect(added).toHaveLength(6);
-    expect(m.molecularFormula()).toBe('C6H6');
+    expect(m.molecularFormula()).toEqual({ C: 6, H: 6 });
   });
 
   it('does not protonate a carboxylate oxygen', () => {
@@ -245,7 +245,7 @@ describe('addImplicitHydrogens', () => {
     m.addBond(carbonyl, o1, 2);
     m.addBond(carbonyl, o2);
     m.addImplicitHydrogens();
-    expect(m.molecularFormula()).toBe('C2H3O2');
+    expect(m.molecularFormula()).toEqual({ C: 2, H: 3, O: 2 });
     expect(m.implicitHydrogens(o2)).toBe(0);
     expect(m.bondOrderSum(o2)).toBe(1);
   });
@@ -256,6 +256,71 @@ describe('addImplicitHydrogens', () => {
     for (let i = 0; i < 4; i++) m.addBond(n, m.addAtom('H'));
     const added = m.addImplicitHydrogens();
     expect(added).toHaveLength(0);
-    expect(m.molecularFormula()).toBe('H4N'); // Hill order: H before N when no carbon
+    expect(m.molecularFormula()).toEqual({ H: 4, N: 1 }); // the dict carries no ordering; Hill order is a rendering concern
+  });
+});
+describe('lazy RDKit representation (getRdkitMolecule)', () => {
+  it('builds once and reuses the cached RDKit molecule', () => {
+    const m = parseSmiles('CCO');
+    const r1 = m.getRdkitMolecule();
+    const r2 = m.getRdkitMolecule();
+    expect(r1).toBe(r2);
+    expect(r1.get_smiles()).toBe('CCO');
+  });
+
+  it('rebuilds after a structural mutation (new object identity)', () => {
+    const m = parseSmiles('C#C'); // acetylene
+    const r1 = m.getRdkitMolecule();
+    // Triple -> double: acetylene -> ethene. The explicit H stays; the
+    // missing H is picked up as implicit, so the serialization stays valid.
+    m.setBondOrder(m.bonds()[0]!, 2);
+    const r2 = m.getRdkitMolecule();
+    expect(r2).not.toBe(r1);
+    expect(r2.get_smiles()).toBe('C=C');
+  });
+
+  it('every mutation kind invalidates the cached representation', () => {
+    const m = parseSmiles('CCC');
+    const r1 = m.getRdkitMolecule();
+    m.setFormalCharge(m.atoms()[0]!, 0); // setting the same value still invalidates
+    expect(m.getRdkitMolecule()).not.toBe(r1);
+
+    const r2 = m.getRdkitMolecule();
+    m.removeBond(m.bonds()[0]!); // methane + ethane (still valid)
+    expect(m.getRdkitMolecule()).not.toBe(r2);
+
+    const r3 = m.getRdkitMolecule();
+    m.removeAtom(m.atoms()[0]!); // ethane (valid)
+    expect(m.getRdkitMolecule()).not.toBe(r3);
+  });
+
+  it('setBondStereo invalidates and round-trips the geometry', () => {
+    const m = parseSmiles('CC=CC');
+    const doubleBond = m.bonds().find((id) => m.getBond(id).order === 2)!;
+    const r1 = m.getRdkitMolecule();
+    m.setBondStereo(doubleBond, 'cis');
+    const r2 = m.getRdkitMolecule();
+    expect(r2).not.toBe(r1);
+    expect(toSmiles(m)).toBe('C/C=C\\C');
+  });
+
+  it('addImplicitHydrogens invalidates through its addAtom/addBond calls', () => {
+    // A hand-built graph has no explicit hydrogens, so addImplicitHydrogens
+    // really adds atoms/bonds (parseSmiles already materialises them).
+    const m = new Molecule();
+    const c1 = m.addAtom('C');
+    const c2 = m.addAtom('C');
+    const o = m.addAtom('O');
+    m.addBond(c1, c2);
+    m.addBond(c2, o);
+    const r1 = m.getRdkitMolecule();
+    m.addImplicitHydrogens();
+    expect(m.getRdkitMolecule()).not.toBe(r1);
+  });
+
+  it('stays consistent with toSmiles (canonical RDKit flavour)', () => {
+    const m = parseSmiles('CCO');
+    m.getRdkitMolecule(); // warm the cache; toSmiles reuses it
+    expect(toSmiles(m)).toBe('CCO');
   });
 });

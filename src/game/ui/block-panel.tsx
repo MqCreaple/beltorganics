@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { render } from 'preact';
+import { bindShortcut } from '../shortcuts';
 import type { Block } from '../../world';
-import { isSourceBlock } from '../../world';
 
 /**
  * HUD panel shown when the player activates a block that carries a `BlockUI`.
@@ -9,17 +9,13 @@ import { isSourceBlock } from '../../world';
  * Behaviour (as designed in docs/game-world.md):
  * - centered on the screen, never full-screen;
  * - a full-screen backdrop sits behind it: clicking outside the panel (or the
- *   close button) dismisses it, clicks inside the panel do not propagate;
+ *   close button, or pressing Escape) dismisses it, clicks inside the panel
+ *   do not propagate;
  * - the block's `ui()` function is mounted into the panel body on open.
  */
 export interface BlockPanelProps {
   block: Block;
   onClose: () => void;
-}
-
-function blockTitle(block: Block): string {
-  if (isSourceBlock(block)) return `Chemical source \u2014 ${block.formula}`;
-  return block.kind;
 }
 
 export function BlockPanel({ block, onClose }: BlockPanelProps) {
@@ -35,6 +31,18 @@ export function BlockPanel({ block, onClose }: BlockPanelProps) {
     };
   }, [block]);
 
+  // While the panel is open, Escape closes it (shortcut recorded in
+  // src/game/shortcuts.ts and bound here; the Phaser scene below does not
+  // handle Escape, so there is no conflict).
+  useEffect(() => {
+    return bindShortcut('close-panel', {
+      onKeyDown: (event) => {
+        event.preventDefault();
+        onClose();
+      },
+    });
+  }, [onClose]);
+
   return (
     <div className="block-panel-backdrop" onClick={onClose}>
       <div
@@ -44,7 +52,7 @@ export function BlockPanel({ block, onClose }: BlockPanelProps) {
         aria-modal="true"
       >
         <header className="block-panel-header">
-          <span className="block-panel-title">{blockTitle(block)}</span>
+          <span className="block-panel-title">{block.title}</span>
           <button className="block-panel-close" type="button" onClick={onClose} aria-label="Close">
             ×
           </button>
