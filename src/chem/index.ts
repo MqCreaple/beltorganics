@@ -4,6 +4,7 @@ export * from './formula';
 export * from './molecule';
 export * from './hybridization';
 export * from './partial-charges';
+export * from './geometry';
 export * from './conjugation';
 export * from './tetrahedral';
 export * from './smiles';

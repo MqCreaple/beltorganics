@@ -20,11 +20,13 @@
     "@rdkit/rdkit": "^2025.3.4-1.0.0",
     "graphology": "^0.26.0",
     "phaser": "^4.2.1",
-    "preact": "^10.29.8"
+    "preact": "^10.29.8",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.4.0",
+    "@types/three": "^0.185.4",
     "graphology-types": "^0.24.8",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",

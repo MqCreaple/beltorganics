@@ -43,15 +43,16 @@ The game layer runs on **Phaser 4** (4.2.1; see `docs/research-game.md`
 section 10 for the decision). The world is an infinite grid recorded in 16x16
 chunks (`src/world/`); chemical source blocks hold a substance's SMILES, are
 clickable, and open a centered panel (built with Preact/TSX in `src/game/ui/`)
-showing the substance name, formula and SMILES. Its Structure and Charge
-layers switch between the RDKit structure diagram and a per-atom partial-charge
-inspector (blue electron-rich atoms, red electron-poor atoms).
+showing the substance name, formula and SMILES above a draggable, zoomable 3D
+molecule. The viewer switches between ball-and-stick and space-filling models;
+Structure, Hybridization, Charge, Electron cloud and pi-orbital overlays color
+or shape the model itself without numbered atom references.
 Player-facing docs: `docs/game-world.md`.
 
 ## Quickstart
 
 ```sh
-npm install     # dependencies (RDKit.js WASM, Phaser 4, Preact, graphology, ...)
+npm install     # dependencies (RDKit.js WASM, Phaser 4, Three.js, Preact, ...)
 npm test        # vitest
 npm run dev     # vite dev server
 npm run build   # typecheck + production build (dist/)
@@ -64,8 +65,8 @@ tests and the browser alike.
 
 - Scroll: zoom toward the cursor
 - Drag or W/A/S/D: pan
-- Click a green chemical source: open its panel (Structure/Charge layers,
-  name, formula and SMILES table)
+- Click a green chemical source: open its panel (interactive 3D property
+  layers, name, formula and SMILES table)
 - Escape or click outside: close the panel (shortcuts are recorded in
   `src/game/shortcuts.ts`)
 
@@ -77,11 +78,11 @@ tests and the browser alike.
 - `src/index.ts` - library entry
 - `src/main.ts` - web app entry (full-screen game canvas)
 - `src/chem/` - chemistry engine (molecule data structure on graphology;
-  SMILES via RDKit.js; hybridization, conjugation and PEOE partial charges;
-  further properties and thermodynamics planned)
+  SMILES via RDKit.js; hybridization, conjugation, PEOE partial charges and
+  topology-derived display conformers; further properties planned)
 - `src/world/` - world simulation (infinite chunked grid, blocks; belts,
   chambers, ports next)
 - `src/game/` - Phaser 4 game shell (grid, camera, input, HUD), the Preact/TSX
-  UI panels (`src/game/ui/`) and the keyboard-shortcut registry
+  UI panels and Three.js molecule viewer (`src/game/ui/`), plus the shortcut registry
   (`src/game/shortcuts.ts`)
 - `test/` - Vitest suites

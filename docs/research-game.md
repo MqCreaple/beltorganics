@@ -41,7 +41,7 @@ The game needs invented elements (Cardinium, Habitium, Obligium, Naturium) with 
 
 ### Toolchain
 
-- TypeScript + Vite for the web app (`npm run dev` / `npm run build`), Vitest for tests (`npm test`). `src/chem/` is pure logic with no DOM dependency, so the engine is testable in Node and usable in the browser.
+- TypeScript + Vite for the web app (`npm run dev` / `npm run build`), Vitest for tests (`npm test`). `src/chem/` is pure logic with no DOM dependency, so the engine is testable in Node and usable in the browser. Three.js is isolated to `src/game/ui/molecule-viewer-3d.tsx`.
 
 ### SMILES generation, parsing & structure diagrams (roadmap step 2, 2026-08-28)
 
@@ -57,6 +57,14 @@ The chemistry backend is **RDKit.js** (`@rdkit/rdkit`, BSD-3; the official RDKit
 Why not openchem: the previous backend (`rajeshg/openchem`) is a tiny (~2 stars, ~179 npm downloads/month, last push 2026-01), single-maintainer library with poor SVG output and stereo bugs (chiral nesting cap ~42, conjugated E/Z corruption). RDKit.js is the de-facto reference implementation and fixes both.
 
 RDKit.js scale limits (measured 2026-08-28 with fresh wasm instances; documented in `docs/smiles-naming.md` and the stress-test comments): canonical `get_smiles` overflows the JS stack around ~500-800 atoms (a linear E/Z chain at 559 heavy atoms, a shallow-branching chiral chain not until far beyond 2696), and a failed call can poison the wasm instance. The stress tests sit just inside the observed limits (248 chiral centres = ~750 heavy atoms; 180 non-conjugated double bonds = 541 heavy atoms) and assert a generous time budget.
+
+### Interactive molecule viewer (adopted 2026-08-29: Three.js 0.185)
+
+- **Three.js** renders the molecule panel's actual 3D scene. `OrbitControls` provides direct drag rotation, wheel/pinch zoom, damping and reset; a `ResizeObserver` keeps the WebGL canvas fitted to the panel. The renderer, controls, animation frame, geometries, materials and WebGL context are explicitly disposed when the panel closes.
+- `src/chem/geometry.ts` stays renderer-independent. It makes a deterministic display conformer from molecular topology: graph traversal initializes sp (180 degree), sp2 (120 degree) and sp3 (tetrahedral) directions; stored tetrahedral parity and cis/trans bond labels choose the correct handedness/side; bond-order-adjusted springs close rings and a bounded non-bonded repulsion prevents overlap. This is a fast visual conformer, not a physical force-field minimum or transition-state calculation.
+- The viewer supports ball-and-stick and space-filling representations. Property controls change the 3D model itself: Structure uses element colors; Hybridization uses sp/sp2/sp3 colors; Charge maps PEOE values from blue through neutral gray to red; Electron cloud adds qualitative translucent van der Waals shells; pi orbitals add opposite-phase lobes on atoms in the perceived conjugated systems. Hover identifies the spatial atom and its active property without exposing graph ids or numbered labels.
+- The pi-orbital overlay is deliberately not called HOMO/LUMO: it visualizes which p orbitals participate in conjugation and their two phases. Actual frontier-orbital energies, eigenvectors and density surfaces require the planned Huckel solver. Likewise, the electron-cloud shell is qualitative, not a quantum density isosurface. The labels in the UI and player/research docs preserve this boundary.
+- RDKit's cached SVG remains the cheap 2D representation for future belt icons and dense UI lists, as planned. The WebGL scene is created only inside an opened molecule panel.
 
 
 
@@ -84,7 +92,7 @@ Decisions for the world groundwork (roadmap step 5 start) and the first playable
 
 - The game shell runs on **Phaser 4** (`src/game/game.ts` wraps a `Phaser.Game` sharing the `World`; `src/game/scene.ts` is the scene). A `Graphics` object redrawn each frame draws the gray grid lines (thinned adaptively when cells are < ~10 px so zooming out never draws unbounded lines), slightly brighter chunk borders every 16 cells (thinned the same way at low zoom), and block squares (green for chemical sources); a small pool of `Text` objects (one per occupied cell, scale-compensated for zoom) draws the SMILES labels.
 - The camera view model (`src/game/camera.ts`) stays framework-free and is pushed into Phaser's camera every frame (`setZoom` + `centerOn`), so all zoom/pan math remains unit-tested in Node while Phaser owns the world -> screen transform and the visible-bounds queries (`camera.getWorldPoint`). Input: wheel -> `camera.zoomAt` (zoom toward the cursor), left-drag pan, and WASD via Phaser keyboard events; pan speed in world units scales inversely with zoom so the on-screen speed stays constant.
-- `npm run build` notes: the RDKit WASM glue imports Node's `fs`/`crypto` in browser-externalized paths (Vite warns; harmless), and `src/chem/rdkit.ts` loads the 6.9 MB `.wasm` as a Vite asset in the browser (a disk path in Node; `initRdkit()` is awaited at startup). The bundle is ~1.6 MB JS + 6.9 MB wasm - fine for a dev-stage game, revisit with code-splitting later.
+- `npm run build` notes: the RDKit WASM glue imports Node's `fs`/`crypto` in browser-externalized paths (Vite warns; harmless), and `src/chem/rdkit.ts` loads the 6.9 MB `.wasm` as a Vite asset in the browser (a disk path in Node; `initRdkit()` is awaited at startup). With Three.js, the bundle is ~2.1 MB JS + 6.9 MB wasm - fine for a dev-stage game, but the viewer should become a lazy chunk before production.
 
 ### Blocks
 

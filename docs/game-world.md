@@ -135,8 +135,8 @@ npm run build # typecheck + production build into dist/
   `scene.ts` (the scene: grid/blocks rendering, input, HUD), `game.ts`
   (wraps the Phaser.Game and shares the world).
 - `src/game/ui/` — Preact/TSX UI: `block-panel.tsx` (the centered HUD overlay
-  and its open/close), `molecule-panel.tsx` (separate structure-diagram and
-  per-atom partial-charge layers for a substance), `source-block-ui.tsx`
+  and its open/close), `molecule-panel.tsx` (substance metadata),
+  `molecule-viewer-3d.tsx` (interactive 3D representations and property layers), `source-block-ui.tsx`
   (builds the `BlockUI` for sources).
 - `src/main.ts` — web entry; creates the game (Phaser canvas) in `#app`, a
   demo world with a few chemical sources, and starts it.
@@ -145,9 +145,11 @@ npm run build # typecheck + production build into dist/
 
 - The world and chemistry engines are framework-free (no DOM, no game engine),
   so they run in Node tests and stay portable. The game shell runs on
-  **Phaser 4** (installed 2026-08-28). The block panel already separates the
-  cached RDKit structure diagram from its graph-derived PEOE Charge layer; a
-  3D molecule view in Phaser can come later, fed by the same registry.
+  **Phaser 4** (installed 2026-08-28). Chemical-source panels embed a Three.js
+  molecule viewer with drag/zoom controls, ball-and-stick and space-filling
+  representations, plus Structure, Hybridization, Charge, qualitative Electron
+  cloud and pi-orbital overlays. The cached RDKit SVG remains the lightweight
+  representation for future molecule icons.
 - Block UI panels are built with **Preact** (JSX/TSX via @preact/preset-vite)
   so components stay modular and reusable; the world engine only carries a
   `BlockUI` function and never touches the UI framework.

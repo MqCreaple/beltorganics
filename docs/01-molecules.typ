@@ -164,7 +164,7 @@ Electronegativity is a fancy word for "greediness for shared electrons". Some at
 - Cardinium and Habitium are evenly matched, so a #ch("C--H") bond is *neutral*: the electrons sit in the middle.
 - Obligium is greedier. In a #ch("C--O") or #ch("O--H") bond, the shared electrons spend more time near the Obligium. The Obligium becomes slightly negative and its partner slightly positive.
 
-These slight, fractional charges are called *partial charges*. They are computed from the molecular graph for every atom and shown in the inspector's *Charge* layer: electron-rich atoms fade toward blue (δ−), while electron-poor atoms fade toward red (δ+). Partial charges mark the *hot spots* of a molecule — the places where reactions like to start.
+These slight, fractional charges are called *partial charges*. They are computed from the molecular graph for every atom and shown directly on the inspector's 3D model in its *Charge* layer: electron-rich atoms fade toward blue (δ−), while electron-poor atoms fade toward red (δ+). Partial charges mark the *hot spots* of a molecule — the places where reactions like to start.
 
 #molfig(
   skeletize({
