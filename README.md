@@ -15,7 +15,7 @@ belts, and solubility-based separation.
 
 ## Status
 
-Chemistry engine (roadmap steps 1-2 in `AGENTS.md`) lives in `src/chem/`:
+Chemistry engine (roadmap steps 1-3 in `AGENTS.md`) lives in `src/chem/`:
 
 - **Molecule data structure** on [graphology](https://graphology.github.io/):
   element and formal charge on atoms, bond order on edges, explicit
@@ -35,12 +35,17 @@ Chemistry engine (roadmap steps 1-2 in `AGENTS.md`) lives in `src/chem/`:
   map, lazily rendered structure-diagram SVGs per substance, and a
   substance-name cache (common name from PubChem, else IUPAC, with the NCI CIR
   resolver as fallback) used for source labels.
+- **Partial charges** (`src/chem/partial-charges.ts`): an eight-pass,
+  graph-derived PEOE model with hybridization-specific parameters, exact
+  formal-charge conservation, and no molecule-specific lookup table.
 
 The game layer runs on **Phaser 4** (4.2.1; see `docs/research-game.md`
 section 10 for the decision). The world is an infinite grid recorded in 16x16
 chunks (`src/world/`); chemical source blocks hold a substance's SMILES, are
 clickable, and open a centered panel (built with Preact/TSX in `src/game/ui/`)
-showing the structure-diagram SVG, the substance name, formula and SMILES.
+showing the substance name, formula and SMILES. Its Structure and Charge
+layers switch between the RDKit structure diagram and a per-atom partial-charge
+inspector (blue electron-rich atoms, red electron-poor atoms).
 Player-facing docs: `docs/game-world.md`.
 
 ## Quickstart
@@ -59,8 +64,8 @@ tests and the browser alike.
 
 - Scroll: zoom toward the cursor
 - Drag or W/A/S/D: pan
-- Click a green chemical source: open its panel (structure-diagram SVG, name,
-  formula and SMILES table)
+- Click a green chemical source: open its panel (Structure/Charge layers,
+  name, formula and SMILES table)
 - Escape or click outside: close the panel (shortcuts are recorded in
   `src/game/shortcuts.ts`)
 
@@ -72,7 +77,8 @@ tests and the browser alike.
 - `src/index.ts` - library entry
 - `src/main.ts` - web app entry (full-screen game canvas)
 - `src/chem/` - chemistry engine (molecule data structure on graphology;
-  SMILES via RDKit.js; properties, thermodynamics planned)
+  SMILES via RDKit.js; hybridization, conjugation and PEOE partial charges;
+  further properties and thermodynamics planned)
 - `src/world/` - world simulation (infinite chunked grid, blocks; belts,
   chambers, ports next)
 - `src/game/` - Phaser 4 game shell (grid, camera, input, HUD), the Preact/TSX

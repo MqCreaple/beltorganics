@@ -65,10 +65,9 @@ export interface ElementInfo {
   /** Number of lone pairs. */
   lonePairs: number;
   /**
-   * Game "greediness" (electronegativity analogue). The ordering
-   * O > N > C ≈ H must hold; the values are placeholders consistent with the
-   * PEOE sp3 parameters documented in docs/research-chemistry.md §8 (step 3 will refine
-   * these per hybridization).
+   * Baseline game "greediness" (electronegativity analogue). The ordering
+   * O > N > C ≈ H must hold. The partial-charge calculator keeps its full
+   * hybridization-dependent PEOE parameter table separately.
    */
   electronegativity: number;
 }

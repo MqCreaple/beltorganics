@@ -90,9 +90,11 @@ Notes distilled from the references in sections 3-4 for direct porting to JS.
 ### PEOE (Gasteiger-Marsili) partial charges
 
 - Electronegativity as a function of charge: χ(q) = a + b·q + c·q².
-- Parameters per element *and* hybridization (sp3/sp2/sp); representative values: H (7.17, 6.24, -0.56); C sp3 (7.98, 9.18, 1.88), C sp2 (8.79, 9.32, 1.51); N sp3 (11.54, 10.82, 1.36), N sp2 (12.87, 11.15, 0.85); O sp3 (14.18, 12.92, 1.39), O sp2 (17.07, 13.79, 0.47). The ordering O > N > C > H matches the game's "greediness" ladder (Obligium > Naturium > Cardinium ≈ Habitium).
+- Parameters per element *and* hybridization (sp3/sp2/sp): H (7.17, 6.24, -0.56); C sp3 (7.98, 9.18, 1.88), C sp2 (8.79, 9.32, 1.51), C sp (10.39, 9.45, 0.73); N sp3 (11.54, 10.82, 1.36), N sp2 (12.87, 11.15, 0.85), N sp (15.68, 11.70, -0.27); O sp3 (14.18, 12.92, 1.39), O sp2 (17.07, 13.79, 0.47). The current labeler makes multiply bonded O sp2; its defensive sp slot uses the same O sp2 fit. The ordering O > N > C > H matches the game's "greediness" ladder (Obligium > Naturium > Cardinium ≈ Habitium).
 - Hybridization from the graph: 4 singles = sp3; one double + singles = sp2; triple or two doubles = sp; aromatic = sp2.
 - Initialise q from formal charges; iterate ~6-8 times with damping 0.5: at iteration k, damp = 0.5^(k+1); per bond (i,j), transfer = damp·(χ_j − χ_i)/χ⁺ where χ⁺ is the electronegativity of the electron-poor end at q = +1; add to one atom and subtract from the other (exact charge conservation). Cost O(iterations·bonds), topology-only, qualitative trends (electronegative atoms negative, H positive, inductive decay with distance).
+
+Implemented in `src/chem/partial-charges.ts` (2026-08-29). The calculator uses eight passes by default and applies every pass simultaneously, so a bond's insertion/traversal order cannot feed a newly changed charge into another bond during that pass. Charge is initialized from formal charge. Transfers occur only across graph edges; a final floating-point correction is made per connected component, so salts retain the formal charge of each ion independently and exactly. The UI keeps Structure and Charge as separate inspector layers and presents every explicit atom on a blue-neutral-red scale. Tests cover water polarity, carbonyl direction, inductive decay, carboxylate charge sharing, disconnected ions, traversal stability, and option validation.
 
 ### Hückel MO (HMO) for HOMO/LUMO
 

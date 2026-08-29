@@ -86,7 +86,7 @@ body {
   overflow: auto;
 }
 
-/* Molecule visualization panel (name title + info table + structure-diagram SVG). */
+/* Molecule visualization panel (metadata + separate structure/charge layers). */
 .molecule-panel-title {
   margin: 0 0 0.75rem;
   font-weight: 600;
@@ -117,6 +117,105 @@ body {
 .molecule-panel-note {
   margin: 0;
   color: #6b7385;
+  font-size: 12px;
+}
+
+.molecule-panel-layers {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  margin: 0.25rem 0 0.75rem;
+  width: fit-content;
+  border: 1px solid #d5dae3;
+  border-radius: 8px;
+  background: #f2f4f8;
+}
+.molecule-panel-layer {
+  border: 0;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  background: transparent;
+  color: #596274;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.molecule-panel-layer:hover {
+  color: #1f2430;
+}
+.molecule-panel-layer[aria-selected='true'] {
+  background: #ffffff;
+  color: #1f2430;
+  box-shadow: 0 1px 3px rgba(31, 41, 55, 0.16);
+}
+
+.molecule-charge-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+  color: #596274;
+  font-size: 12px;
+}
+.molecule-charge-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.charge-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid rgba(31, 41, 55, 0.18);
+  border-radius: 50%;
+}
+.charge-negative {
+  background: rgb(69, 123, 214);
+}
+.charge-neutral {
+  background: rgb(226, 230, 237);
+}
+.charge-positive {
+  background: rgb(220, 78, 78);
+}
+.molecule-charge-atoms {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 0.5rem;
+  max-height: 250px;
+  overflow: auto;
+  margin: 0;
+  padding: 0.15rem;
+  list-style: none;
+}
+.molecule-charge-atoms li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--charge-color) 70%, #697386);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--charge-color) 36%, white);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.molecule-charge-atom-label {
+  font-weight: 700;
+}
+.molecule-charge-atoms output,
+.molecule-charge-total output {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.molecule-charge-total {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.75rem 0 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #e4e8ef;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .game-hud {
