@@ -8,8 +8,8 @@ import type { Attributes } from 'graphology-types';
  * semantics (elements, valences, stereo labels, formula) live on top of it.
  */
 
-/** Game elements (invented names; real-world symbols). */
-export type ElementSymbol = 'B' | 'Br' | 'C' | 'Cl' | 'F' | 'H' | 'I' | 'Li' | 'Mg' | 'N' | 'O' | 'P' | 'S';
+/** The four game elements (invented names; real-world letters). */
+export type ElementSymbol = 'C' | 'H' | 'O' | 'N';
 
 export type BondOrder = 1 | 2 | 3;
 
@@ -52,41 +52,21 @@ export type TetrahedralStereo = [BondId, BondId, BondId, BondId];
  */
 export type BondGeometryStereo = [BondId, BondId];
 
-export interface PeoeParameters {
-  a: number;
-  b: number;
-  c: number;
-}
-
-/** Static properties of one game element. */
+/** Static properties of one of the four game elements. */
 export interface ElementInfo {
   symbol: ElementSymbol;
-  atomicNumber: number;
-  period: number;
-  /** Invented pseudo-chemistry name. */
+  /** Invented name (Cardinium, Habitium, Obligium, Naturium). */
   name: string;
-  /** Short rationale for the invented word root. */
-  nameRoot: string;
-  /** Default number of hands used for implicit-hydrogen saturation. */
+  /** Number of hands: maximum number of single bonds. */
   valence: number;
-  allowedValences: readonly number[];
-  valenceElectrons: number;
-  electronConfiguration: string;
   /** Number of lone pairs. */
   lonePairs: number;
   /**
    * Baseline game "greediness" (electronegativity analogue). The ordering
-   * O > N > C ≈ H must hold. Hybridization-dependent PEOE fits are stored
-   * below on the same element record.
+   * O > N > C ≈ H must hold. The partial-charge calculator keeps its full
+   * hybridization-dependent PEOE parameter table separately.
    */
   electronegativity: number;
-  covalentRadius: number;
-  vanDerWaalsRadius: number;
-  displayColor: number;
-  /** Hybridization-specific PEOE fits; `*` is a generic fallback. */
-  peoe: Partial<Record<'*' | 'sp' | 'sp2' | 'sp3', PeoeParameters>>;
-  /** Hückel on-site energy in beta units; lower is more electron-binding. */
-  huckelCoulomb: number;
 }
 
 /**

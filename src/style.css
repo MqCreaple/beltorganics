@@ -166,25 +166,8 @@ body {
 }
 .molecule-viewer-representation {
   flex: 0 0 auto;
-  align-items: center;
   padding-left: 0.6rem;
   border-left: 1px solid #d7deea;
-}
-.molecule-viewer-representation label {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: #566173;
-  font-size: 12px;
-}
-.molecule-viewer-representation select {
-  max-width: 14rem;
-  border: 1px solid #b8c5d7;
-  border-radius: 6px;
-  padding: 0.3rem 0.4rem;
-  background: #fff;
-  color: #26364a;
-  font: inherit;
 }
 .molecule-viewer-stage {
   position: relative;
