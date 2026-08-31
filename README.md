@@ -8,8 +8,9 @@ on **conveyor belts**, react them in **reaction chambers**, cope with
 **unexpected side reactions**, and **separate** the products you actually want.
 
 The chemistry is a simplified, internally consistent invented system (see
-`AGENTS.md` for the full spec): four elements for now - **Cardinium (C)**,
-**Habitium (H)**, **Obligium (O)**, **Naturium (N)** - with bond-energy
+`AGENTS.md` for the full spec): thirteen pseudo-elements, from **Cardinium (C)**,
+**Habitium (H)**, **Obligium (O)** and **Naturium (N)** through B, halogens,
+S, P, Li and Mg, with centralized element properties and bond-energy
 thermodynamics, temperature-driven Gibbs free energy, phase/solvent-typed
 belts, and solubility-based separation.
 

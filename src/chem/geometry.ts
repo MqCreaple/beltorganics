@@ -15,6 +15,7 @@ import {
 } from '../math';
 import type { DistanceConstraint } from '../math';
 import { conjugatedPiSystems } from './conjugation';
+import { ELEMENTS } from './elements';
 import { hybridizationOf } from './hybridization';
 import { orderIndicator } from './tetrahedral';
 import type { Molecule } from './molecule';
@@ -28,7 +29,7 @@ export interface GeometryIssue {
   expected: number;
 }
 
-const COVALENT_RADIUS: Record<ElementSymbol, number> = { H: 0.31, C: 0.76, N: 0.71, O: 0.66 };
+const covalentRadius = (element: ElementSymbol): number => ELEMENTS[element].covalentRadius;
 const TYPICAL_BOND_LENGTHS = new Map<string, number>([
   ['C-C-1', 1.54], ['C-C-2', 1.34], ['C-C-3', 1.20], ['C-H-1', 1.09],
   ['C-O-1', 1.43], ['C-O-2', 1.23], ['H-O-1', 0.96], ['O-O-1', 1.48],
@@ -51,7 +52,7 @@ function bondKey(a: ElementSymbol, b: ElementSymbol, order: BondOrder): string {
 export function idealBondLength(first: ElementSymbol, second: ElementSymbol, order: BondOrder): number {
   const listed = TYPICAL_BOND_LENGTHS.get(bondKey(first, second, order));
   if (listed !== undefined) return listed;
-  return (COVALENT_RADIUS[first] + COVALENT_RADIUS[second]) * (order === 1 ? 1 : order === 2 ? 0.9 : 0.82);
+  return (covalentRadius(first) + covalentRadius(second)) * (order === 1 ? 1 : order === 2 ? 0.9 : 0.82);
 }
 
 function lengthOfBond(molecule: Molecule, a: AtomId, b: AtomId, adjusted: ReadonlyMap<BondId, number>): number {
@@ -182,7 +183,7 @@ export function idealBondAngle(molecule: Molecule, center: AtomId): number {
 /** Lone pairs drawn as localized electron domains (a conjugated p pair is excluded). */
 export function displayedLonePairCount(molecule: Molecule, atom: AtomId): number {
   const { element, formalCharge } = molecule.getAtom(atom);
-  let count = Math.max(0, ({ H: 0, C: 0, N: 1, O: 2 } satisfies Record<ElementSymbol, number>)[element] - formalCharge);
+  let count = Math.max(0, ELEMENTS[element].lonePairs - formalCharge);
   const hasOwnPiBond = molecule.bondsOf(atom).some((bondId) => molecule.getBond(bondId).order > 1);
   const donatesPairToPiSystem = !hasOwnPiBond
     && hybridizationOf(molecule, atom) === 'sp2'
@@ -603,7 +604,7 @@ function separateAtoms(molecule: Molecule, positions: Map<AtomId, Vector3>, bond
     const a = atoms[i]!; const b = atoms[j]!; if (bonded.has(pairKey(a, b))) continue;
     const first = positions.get(a)!; const second = positions.get(b)!;
     let delta = second.clone().sub(first); let distance = delta.length();
-    const minimum = (COVALENT_RADIUS[molecule.getAtom(a).element] + COVALENT_RADIUS[molecule.getAtom(b).element]) * 0.72;
+    const minimum = (covalentRadius(molecule.getAtom(a).element) + covalentRadius(molecule.getAtom(b).element)) * 0.72;
     if (distance >= minimum) continue;
     if (distance < 1e-8) {
       delta = normalized(new Vector3(atomNumber(a) + 1, atomNumber(b) + 3, 0.73));
@@ -624,7 +625,7 @@ function separateHydrogens(molecule: Molecule, positions: Map<AtomId, Vector3>, 
     if (!aMovable && !bMovable) continue;
     const first = positions.get(a)!; const second = positions.get(b)!;
     let delta = second.clone().sub(first); let distance = delta.length();
-    const minimum = (COVALENT_RADIUS[molecule.getAtom(a).element] + COVALENT_RADIUS[molecule.getAtom(b).element]) * 0.72;
+    const minimum = (covalentRadius(molecule.getAtom(a).element) + covalentRadius(molecule.getAtom(b).element)) * 0.72;
     if (distance >= minimum) continue;
     if (distance < 1e-8) {
       delta = normalized(new Vector3(atomNumber(a) + 1, atomNumber(b) + 3, 0.73));
@@ -663,7 +664,7 @@ function separateAtomBonds(molecule: Molecule, positions: Map<AtomId, Vector3>, 
   for (const atom of molecule.atoms()) for (const bond of bonds) {
     if (bond.source === atom || bond.target === atom) continue;
     const closest = segmentDistance(positions.get(atom)!, positions.get(atom)!, positions.get(bond.source)!, positions.get(bond.target)!);
-    const minimum = COVALENT_RADIUS[molecule.getAtom(atom).element] * 0.48 + 0.06;
+    const minimum = covalentRadius(molecule.getAtom(atom).element) * 0.48 + 0.06;
     if (closest.distance >= minimum) continue;
     const bondAxis = positions.get(bond.target)!.clone().sub(positions.get(bond.source)!);
     const direction = closest.distance < 1e-7
@@ -727,8 +728,8 @@ export function geometryIssues(molecule: Molecule, geometry: MoleculeGeometry): 
   for (const id of molecule.bonds()) { const {source,target}=molecule.getBond(id); const actual=positions.get(source)!.distanceTo(positions.get(target)!); const expected=lengthOfBond(molecule,source,target,adjusted); if(Math.abs(actual-expected)>0.08) issues.push({kind:'bond-length',atoms:[source,target],actual,expected}); }
   for (const center of molecule.atoms()) { const neighbors=molecule.neighbors(center); if(neighbors.length<2||molecule.getAtom(center).element==='H') continue; const expected=idealBondAngle(molecule,center); for(let i=0;i<neighbors.length;i+=1) for(let j=i+1;j<neighbors.length;j+=1){const actual=angleDegrees(positions.get(neighbors[i]!)!,positions.get(center)!,positions.get(neighbors[j]!)!); if(Math.abs(actual-expected)>(expected===180?12:20)) issues.push({kind:'bond-angle',atoms:[neighbors[i]!,center,neighbors[j]!],actual,expected});}}
   for(const group of conjugatedPlanarGroups(molecule)){const plane=bestFitPlane(group.map((atom)=>positions.get(atom)!)); for(const atom of group){const actual=Math.abs(positions.get(atom)!.clone().sub(plane.center).dot(plane.normal)); if(actual>0.08) issues.push({kind:'planarity',atoms:[atom],actual,expected:0});}}
-  const bonded=bondedPairs(molecule); const atoms=molecule.atoms(); for(let i=0;i<atoms.length;i+=1) for(let j=i+1;j<atoms.length;j+=1){const a=atoms[i]!,b=atoms[j]!; if(bonded.has(pairKey(a,b)))continue; const actual=positions.get(a)!.distanceTo(positions.get(b)!); const expected=(COVALENT_RADIUS[molecule.getAtom(a).element]+COVALENT_RADIUS[molecule.getAtom(b).element])*0.64; if(actual<expected)issues.push({kind:'atom-overlap',atoms:[a,b],actual,expected});}
+  const bonded=bondedPairs(molecule); const atoms=molecule.atoms(); for(let i=0;i<atoms.length;i+=1) for(let j=i+1;j<atoms.length;j+=1){const a=atoms[i]!,b=atoms[j]!; if(bonded.has(pairKey(a,b)))continue; const actual=positions.get(a)!.distanceTo(positions.get(b)!); const expected=(covalentRadius(molecule.getAtom(a).element)+covalentRadius(molecule.getAtom(b).element))*0.64; if(actual<expected)issues.push({kind:'atom-overlap',atoms:[a,b],actual,expected});}
   const bonds=molecule.bonds().map((id)=>molecule.getBond(id)); for(let i=0;i<bonds.length;i+=1) for(let j=i+1;j<bonds.length;j+=1){const a=bonds[i]!,b=bonds[j]!;if([a.source,a.target].some((atom)=>atom===b.source||atom===b.target))continue;const actual=segmentDistance(positions.get(a.source)!,positions.get(a.target)!,positions.get(b.source)!,positions.get(b.target)!).distance;if(actual<0.1)issues.push({kind:'bond-crossing',atoms:[a.source,a.target,b.source,b.target],actual,expected:0.1});}
-  for(const atom of atoms)for(const bond of bonds){if(bond.source===atom||bond.target===atom)continue;const actual=segmentDistance(positions.get(atom)!,positions.get(atom)!,positions.get(bond.source)!,positions.get(bond.target)!).distance;const expected=COVALENT_RADIUS[molecule.getAtom(atom).element]*0.48+0.06;if(actual<expected)issues.push({kind:'atom-bond',atoms:[atom,bond.source,bond.target],actual,expected});}
+  for(const atom of atoms)for(const bond of bonds){if(bond.source===atom||bond.target===atom)continue;const actual=segmentDistance(positions.get(atom)!,positions.get(atom)!,positions.get(bond.source)!,positions.get(bond.target)!).distance;const expected=covalentRadius(molecule.getAtom(atom).element)*0.48+0.06;if(actual<expected)issues.push({kind:'atom-bond',atoms:[atom,bond.source,bond.target],actual,expected});}
   return issues;
 }
