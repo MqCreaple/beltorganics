@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { generateMoleculeGeometry, geometryIssues, idealBondLength, parseSmiles } from '../src/chem';
+import {
+  displayedLonePairCount,
+  generateMoleculeGeometry,
+  geometryIssues,
+  hybridizationOf,
+  idealBondLength,
+  lonePairDirections,
+  parseSmiles,
+} from '../src/chem';
 import { DEMO_SOURCES } from '../src/demo-sources';
 import type { AtomId, Molecule, Point3D } from '../src/chem';
 
@@ -132,6 +140,77 @@ describe('topology-derived 3D molecular geometry', () => {
     const first = generateMoleculeGeometry(molecule);
     const second = generateMoleculeGeometry(molecule);
     expect([...second.positions]).toEqual([...first.positions]);
+  });
+
+  it('makes benzene a regular hexagon with resonance-equalized C-C bonds', () => {
+    const molecule = parseSmiles('c1ccccc1');
+    const positions = generateMoleculeGeometry(molecule).positions;
+    const carbons = molecule.atoms().filter((atom) => molecule.getAtom(atom).element === 'C');
+    const lengths = molecule.bonds()
+      .map((bond) => molecule.getBond(bond))
+      .filter(({ source, target }) => carbons.includes(source) && carbons.includes(target))
+      .map(({ source, target }) => length(subtract(positions.get(source)!, positions.get(target)!)));
+    expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThan(0.03);
+    expect(lengths[0]).toBeCloseTo((1.54 + 1.34) / 2, 1);
+    for (const carbon of carbons) {
+      const carbonNeighbors = molecule.neighbors(carbon).filter((atom) => molecule.getAtom(atom).element === 'C');
+      expect(angleDegrees(positions.get(carbonNeighbors[0]!)!, positions.get(carbon)!, positions.get(carbonNeighbors[1]!)!)).toBeCloseTo(120, 0);
+    }
+  });
+
+  it('keeps acetic acid C-O bonds distinct but equalizes acetate', () => {
+    const oxygenBondLengths = (smiles: string): number[] => {
+      const molecule = parseSmiles(smiles);
+      const positions = generateMoleculeGeometry(molecule).positions;
+      const carbon = molecule.atoms().find((atom) => molecule.getAtom(atom).element === 'C'
+        && molecule.neighbors(atom).filter((neighbor) => molecule.getAtom(neighbor).element === 'O').length === 2)!;
+      return molecule.neighbors(carbon)
+        .filter((atom) => molecule.getAtom(atom).element === 'O')
+        .map((oxygen) => length(subtract(positions.get(carbon)!, positions.get(oxygen)!)));
+    };
+    const acid = oxygenBondLengths('CC(=O)O');
+    const acetate = oxygenBondLengths('CC(=O)[O-]');
+    expect(Math.abs(acid[0]! - acid[1]!)).toBeGreaterThan(0.12);
+    expect(Math.abs(acetate[0]! - acetate[1]!)).toBeLessThan(0.03);
+  });
+
+  it('places water bonds and localized lone pairs as four tetrahedral electron domains', () => {
+    const molecule = parseSmiles('O');
+    const oxygen = atomOf(molecule, 'O');
+    const geometry = generateMoleculeGeometry(molecule);
+    const bondDirections = molecule.neighbors(oxygen).map((hydrogen) => subtract(geometry.positions.get(hydrogen)!, geometry.positions.get(oxygen)!));
+    const pairs = lonePairDirections(molecule, oxygen, geometry.positions);
+    expect(displayedLonePairCount(molecule, oxygen)).toBe(2);
+    expect(pairs).toHaveLength(2);
+    const domains = [...bondDirections, ...pairs];
+    for (let first = 0; first < domains.length; first += 1) for (let second = first + 1; second < domains.length; second += 1) {
+      const angle = Math.acos(dot(domains[first]!, domains[second]!) / (length(domains[first]!) * length(domains[second]!))) * 180 / Math.PI;
+      expect(angle).toBeGreaterThan(100);
+      expect(angle).toBeLessThan(116);
+    }
+    expect(Math.abs(signedVolume({ x: 0, y: 0, z: 0 }, ...domains.slice(0, 3) as [Point3D, Point3D, Point3D]))).toBeGreaterThan(0.1);
+  });
+
+  it('moves a donor lone pair into the pi system but retains double-bonded O lone pairs', () => {
+    const formamide = parseSmiles('C(=O)N');
+    const amideNitrogen = formamide.atoms().find((atom) => formamide.getAtom(atom).element === 'N')!;
+    expect(displayedLonePairCount(formamide, amideNitrogen)).toBe(0);
+
+    const formaldehyde = parseSmiles('C=O');
+    const oxygen = atomOf(formaldehyde, 'O');
+    const geometry = generateMoleculeGeometry(formaldehyde);
+    const pairs = lonePairDirections(formaldehyde, oxygen, geometry.positions);
+    const bond = subtract(geometry.positions.get(formaldehyde.neighbors(oxygen)[0]!)!, geometry.positions.get(oxygen)!);
+    expect(displayedLonePairCount(formaldehyde, oxygen)).toBe(2);
+    expect(angleDegrees(pairs[0]!, { x: 0, y: 0, z: 0 }, bond)).toBeCloseTo(120, 5);
+    expect(angleDegrees(pairs[1]!, { x: 0, y: 0, z: 0 }, bond)).toBeCloseTo(120, 5);
+
+    const adenine = parseSmiles('Nc1ncnc2[nH]cnc12');
+    const donorNitrogens = adenine.atoms().filter((atom) => adenine.getAtom(atom).element === 'N'
+      && hybridizationOf(adenine, atom) === 'sp2'
+      && adenine.bondsOf(atom).every((bondId) => adenine.getBond(bondId).order === 1));
+    expect(donorNitrogens).toHaveLength(2);
+    expect(donorNitrogens.map((atom) => displayedLonePairCount(adenine, atom))).toEqual([0, 0]);
   });
 
   it.each(DEMO_SOURCES.map(([, , smiles]) => [smiles]))('satisfies the geometry rules for demo molecule %s', (smiles) => {

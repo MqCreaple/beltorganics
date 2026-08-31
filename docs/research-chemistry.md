@@ -163,6 +163,22 @@ References (structure and conformation of divinylacetylene / 1,5-hexadiene-3-yne
 
 Known simplifications: cross-conjugation and non-planar twisted geometries are not modelled; conformational flexibility (the nearly free internal rotation of real divinylacetylene) is not modelled and the planar, maximally conjugated conformer is assumed; aromaticity is still perceived from kekulé double bonds; a lone carbocation (CH3+) forms a 1-atom, 0-electron system.
 
+### Resonance-adjusted display bond lengths (v1)
+
+`src/chem/geometry.ts` keeps the molecular graph's integer bond orders for identity and reactions, but `resonanceAdjustedBondLengths` can assign an intermediate **display** length when equivalent resonance contributors exchange a single and double bond. The intentionally compact rules are:
+
+1. Average the single/double lengths around a uniform 4n+2 conjugated cycle only when every ring atom has the same element, charge, two in-system neighbours and the same external-neighbour signature. This makes benzene a regular hexagon while avoiding blanket equalization of asymmetric or fused conjugated rings.
+2. At one conjugated center, average single/double bonds to terminal neighbours only when the neighbours have the same element and identical hydrogen/heavy-neighbour environments. Acetate therefore has two equal C-O display lengths, while acetic acid keeps distinct C=O and C-OH lengths because only one oxygen bears hydrogen.
+3. The intermediate value is the game-requested arithmetic mean of the tabulated single- and double-bond lengths. This is a visual pseudo-chemistry rule, not a computed fractional bond order.
+
+The chemistry basis is that resonance forms are contributors to one wavefunction rather than separate structures (IUPAC Gold Book: https://goldbook.iupac.org/terms/view/08205); benzene's six C-C bonds are experimentally equal and intermediate (Open University: https://www.open.edu/openlearn/science-maths-technology/chemistry/discovering-chemistry/altformat-printable); and the two acetate C-O bonds are equal because its contributors are equivalent, unlike the nonequivalent contributors of the neutral acid (https://chem.libretexts.org/Bookshelves/Organic_Chemistry/Basic_Principles_of_Organic_Chemistry_(Roberts_and_Caserio)/18:_Carboxylic_Acids_and_Their_Derivatives/18.03:_Some_Chemical_Properties_of_Carboxylic_Acids).
+
+### Display electron domains and van der Waals surfaces
+
+Localized lone pairs use VSEPR directions in the viewer: water's two bonds and two lone pairs occupy four approximately tetrahedral domains; sp2 atoms keep their localized domains in the molecular plane. A lone pair that is the p-orbital contribution of an sp2 donor with no multiple bond of its own (amide N, pyrrole-like N, etc.) is counted in the conjugated π surface and omitted from the localized-lone-pair display. A double-bonded atom such as formaldehyde O keeps its localized lone pairs because its p orbital is already represented by the explicit π bond.
+
+Space-filling atoms use the Bondi/Rowland-Taylor van der Waals radii H 1.10 Å, C 1.70 Å, N 1.55 Å and O 1.52 Å, so bonded spheres intentionally overlap. Sources: Bondi, *J. Phys. Chem.* 68 (1964) 441-451, https://doi.org/10.1021/j100785a001; Mantina et al., *J. Phys. Chem. A* 113 (2009) 5806-5812, https://doi.org/10.1021/jp8111556.
+
 
 ## 9. Player-facing naming convention (decided)
 

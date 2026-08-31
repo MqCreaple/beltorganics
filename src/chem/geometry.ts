@@ -2,7 +2,7 @@ import { conjugatedPiSystems } from './conjugation';
 import { hybridizationOf } from './hybridization';
 import { orderIndicator } from './tetrahedral';
 import type { Molecule } from './molecule';
-import type { AtomId, BondOrder, ElementSymbol } from './types';
+import type { AtomId, BondId, BondOrder, ElementSymbol } from './types';
 
 export interface Point3D { x: number; y: number; z: number }
 export interface MoleculeGeometry { positions: Map<AtomId, Point3D> }
@@ -47,8 +47,126 @@ export function idealBondLength(first: ElementSymbol, second: ElementSymbol, ord
 }
 
 function lengthOfBond(molecule: Molecule, a: AtomId, b: AtomId): number {
-  const bond = molecule.getBond(molecule.bondBetween(a, b)!);
+  const bondId = molecule.bondBetween(a, b)!;
+  const resonanceLength = resonanceAdjustedBondLengths(molecule).get(bondId);
+  if (resonanceLength !== undefined) return resonanceLength;
+  const bond = molecule.getBond(bondId);
   return idealBondLength(molecule.getAtom(a).element, molecule.getAtom(b).element, bond.order);
+}
+
+/**
+ * Effective lengths for bonds exchanged by equivalent resonance forms.
+ *
+ * Compact game rule:
+ * 1. Alternating bonds in a uniform 4n+2 conjugated cycle are averaged. The
+ *    atoms and their external environments must be equivalent, so benzene is
+ *    regular without flattening every bond in asymmetric/fused systems.
+ * 2. Single/double bonds from one conjugated center to terminal substituents
+ *    are averaged only when those substituents have the same element and the
+ *    same hydrogen/heavy-neighbor environment. Thus acetate is symmetric,
+ *    while protonated acetic acid is not.
+ */
+export function resonanceAdjustedBondLengths(molecule: Molecule): Map<BondId, number> {
+  const result = new Map<BondId, number>();
+  const systems = conjugatedPiSystems(molecule).filter((system) => system.atoms.length >= 3);
+
+  for (const system of systems) {
+    const atoms = new Set(system.atoms);
+    if (isUniformAromaticCycle(molecule, system.atoms, system.electronCount)) {
+      const cycleBonds = molecule.bonds().filter((bondId) => {
+        const bond = molecule.getBond(bondId);
+        return bond.order <= 2
+          && atoms.has(bond.source)
+          && atoms.has(bond.target)
+          && hasAlternatePath(molecule, bond.source, bond.target, bondId, atoms);
+      });
+      for (const bondId of cycleBonds) {
+        const bond = molecule.getBond(bondId);
+        result.set(bondId, averageSingleDoubleLength(
+          molecule.getAtom(bond.source).element,
+          molecule.getAtom(bond.target).element,
+        ));
+      }
+    }
+
+    for (const center of system.atoms) {
+      const candidates = molecule.neighbors(center).filter((neighbor) => atoms.has(neighbor));
+      const groups = new Map<string, AtomId[]>();
+      for (const neighbor of candidates) {
+        const otherNeighbors = molecule.neighbors(neighbor).filter((atom) => atom !== center);
+        const hydrogenCount = otherNeighbors.filter((atom) => molecule.getAtom(atom).element === 'H').length;
+        const heavyElements = otherNeighbors
+          .filter((atom) => molecule.getAtom(atom).element !== 'H')
+          .map((atom) => molecule.getAtom(atom).element)
+          .sort()
+          .join('');
+        const key = `${molecule.getAtom(neighbor).element}|H${hydrogenCount}|${heavyElements}`;
+        const group = groups.get(key) ?? [];
+        group.push(neighbor);
+        groups.set(key, group);
+      }
+      for (const equivalent of groups.values()) {
+        const orders = new Set(equivalent.map((neighbor) => molecule.getBond(molecule.bondBetween(center, neighbor)!).order));
+        if (!orders.has(1) || !orders.has(2)) continue;
+        for (const neighbor of equivalent) {
+          const bondId = molecule.bondBetween(center, neighbor)!;
+          result.set(bondId, averageSingleDoubleLength(
+            molecule.getAtom(center).element,
+            molecule.getAtom(neighbor).element,
+          ));
+        }
+      }
+    }
+  }
+  return result;
+}
+
+function isUniformAromaticCycle(
+  molecule: Molecule,
+  atoms: readonly AtomId[],
+  electronCount: number,
+): boolean {
+  if (electronCount < 2 || (electronCount - 2) % 4 !== 0) return false;
+  const atomSet = new Set(atoms);
+  const signatures = atoms.map((atom) => {
+    const inside = molecule.neighbors(atom).filter((neighbor) => atomSet.has(neighbor));
+    const outside = molecule.neighbors(atom)
+      .filter((neighbor) => !atomSet.has(neighbor))
+      .map((neighbor) => `${molecule.getAtom(neighbor).element}:${molecule.getAtom(neighbor).formalCharge}`)
+      .sort()
+      .join(',');
+    const view = molecule.getAtom(atom);
+    return { inside: inside.length, signature: `${view.element}:${view.formalCharge}|${outside}` };
+  });
+  return signatures.every(({ inside }) => inside === 2)
+    && signatures.every(({ signature }) => signature === signatures[0]!.signature);
+}
+
+function averageSingleDoubleLength(first: ElementSymbol, second: ElementSymbol): number {
+  return (idealBondLength(first, second, 1) + idealBondLength(first, second, 2)) / 2;
+}
+
+function hasAlternatePath(
+  molecule: Molecule,
+  source: AtomId,
+  target: AtomId,
+  excludedBond: BondId,
+  allowed: ReadonlySet<AtomId>,
+): boolean {
+  const visited = new Set<AtomId>([source]);
+  const queue = [source];
+  for (let index = 0; index < queue.length; index += 1) {
+    const atom = queue[index]!;
+    for (const neighbor of molecule.neighbors(atom)) {
+      if (!allowed.has(neighbor) || molecule.bondBetween(atom, neighbor) === excludedBond) continue;
+      if (neighbor === target) return true;
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+  }
+  return false;
 }
 
 /** VSEPR angle target, including lone-pair compression for water-like O and ammonia-like N. */
@@ -60,6 +178,96 @@ export function idealBondAngle(molecule: Molecule, center: AtomId): number {
   if (element === 'O' && molecule.neighborCount(center) === 2) return 104.5;
   if (element === 'N' && molecule.neighborCount(center) === 3) return 107;
   return 109.4712206;
+}
+
+/** Lone pairs drawn as localized electron domains (a conjugated p pair is excluded). */
+export function displayedLonePairCount(molecule: Molecule, atom: AtomId): number {
+  const { element, formalCharge } = molecule.getAtom(atom);
+  let count = Math.max(0, ({ H: 0, C: 0, N: 1, O: 2 } satisfies Record<ElementSymbol, number>)[element] - formalCharge);
+  const hasOwnPiBond = molecule.bondsOf(atom).some((bondId) => molecule.getBond(bondId).order > 1);
+  const donatesPairToPiSystem = !hasOwnPiBond
+    && hybridizationOf(molecule, atom) === 'sp2'
+    && conjugatedPiSystems(molecule).some((system) => system.atoms.includes(atom));
+  if (donatesPairToPiSystem) count -= 1;
+  return Math.max(0, count);
+}
+
+/** VSEPR directions for the localized lone pairs shown by the viewer. */
+export function lonePairDirections(
+  molecule: Molecule,
+  atom: AtomId,
+  positions: ReadonlyMap<AtomId, Point3D>,
+): Point3D[] {
+  const count = displayedLonePairCount(molecule, atom);
+  if (count === 0) return [];
+  const center = positions.get(atom)!;
+  const bonds = molecule.neighbors(atom).map((neighbor) => unit(sub(positions.get(neighbor)!, center)));
+  const hybridization = hybridizationOf(molecule, atom);
+  let away = { x: 0, y: 0, z: 0 };
+  for (const direction of bonds) away = sub(away, direction);
+  if (magnitude(away) < 1e-7) away = perpendicular(bonds[0] ?? { x: 1, y: 0, z: 0 }, atomNumber(atom));
+  away = unit(away);
+
+  if (hybridization === 'sp2') {
+    const normal = localPiPlaneNormal(molecule, atom, positions, bonds);
+    if (count === 2 && bonds.length === 1) {
+      return [rotateAroundAxis(bonds[0]!, normal, 2 * Math.PI / 3), rotateAroundAxis(bonds[0]!, normal, -2 * Math.PI / 3)];
+    }
+    const planarAway = unit(sub(away, mul(normal, dot(away, normal))));
+    if (count === 1) return [planarAway];
+    return spreadAround(planarAway, normal, count, 2 * Math.PI / 3);
+  }
+
+  if (count === 2 && bonds.length >= 2) {
+    const rawNormal = cross(bonds[0]!, bonds[1]!);
+    const normal = magnitude(rawNormal) < 1e-7
+      ? perpendicular(away, atomNumber(atom))
+      : unit(rawNormal);
+    return [
+      unit(add(mul(away, Math.sqrt(1 / 3)), mul(normal, Math.sqrt(2 / 3)))),
+      unit(sub(mul(away, Math.sqrt(1 / 3)), mul(normal, Math.sqrt(2 / 3)))),
+    ];
+  }
+  if (count === 1) return [away];
+
+  const axis = bonds[0] ?? mul(away, -1);
+  const radial1 = perpendicular(axis, atomNumber(atom));
+  const radial2 = unit(cross(axis, radial1));
+  return Array.from({ length: count }, (_, index) => {
+    const azimuth = index * 2 * Math.PI / count;
+    const radial = add(mul(radial1, Math.cos(azimuth)), mul(radial2, Math.sin(azimuth)));
+    return unit(add(mul(axis, -1 / 3), mul(radial, 2 * Math.sqrt(2) / 3)));
+  });
+}
+
+function localPiPlaneNormal(
+  molecule: Molecule,
+  atom: AtomId,
+  positions: ReadonlyMap<AtomId, Point3D>,
+  bondDirections: readonly Point3D[],
+): Point3D {
+  const group = conjugatedPlanarGroups(molecule).find((candidate) => candidate.includes(atom));
+  if (group !== undefined && group.length >= 3) return bestPlane(group.map((id) => positions.get(id)!)).normal;
+  if (bondDirections.length >= 2 && magnitude(cross(bondDirections[0]!, bondDirections[1]!)) > 1e-7) {
+    return unit(cross(bondDirections[0]!, bondDirections[1]!));
+  }
+  return perpendicular(bondDirections[0] ?? { x: 1, y: 0, z: 0 }, atomNumber(atom));
+}
+
+function rotateAroundAxis(vector: Point3D, axis: Point3D, radians: number): Point3D {
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return unit(add(
+    add(mul(vector, cosine), mul(cross(axis, vector), sine)),
+    mul(axis, dot(axis, vector) * (1 - cosine)),
+  ));
+}
+
+function spreadAround(direction: Point3D, axis: Point3D, count: number, span: number): Point3D[] {
+  return Array.from({ length: count }, (_, index) => {
+    const fraction = count === 1 ? 0 : index / (count - 1) - 0.5;
+    return rotateAroundAxis(direction, axis, fraction * span);
+  });
 }
 
 function perpendicular(axis: Point3D, salt = 0): Point3D {

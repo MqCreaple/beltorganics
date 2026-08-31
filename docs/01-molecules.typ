@@ -183,7 +183,7 @@ Polarity is not decoration: it decides how molecules interact with solvents (Par
 
 == Lone pairs <sec:lone-pairs>
 
-Some electrons are not used for bonds at all: they sit on a single atom as a *lone pair*. Obligium carries two, Naturium one. A lone pair makes its atom electron-rich and "donor-like" — a natural place where electron-hungry partners like to attach. Whenever you see a molecule with an Obligium or Naturium, expect the interesting chemistry to happen near it.
+Some electrons are not used for bonds at all: they sit on a single atom as a *lone pair*. Obligium carries two, Naturium one. A lone pair makes its atom electron-rich and "donor-like" — a natural place where electron-hungry partners like to attach. Whenever you see a molecule with an Obligium or Naturium, expect the interesting chemistry to happen near it. In a conjugated molecule a donating lone pair can become part of the shared π cloud; the 3D inspector then shows it in that cloud instead of drawing the same pair twice as a localized lobe.
 
 == Shape and stereochemistry <sec:stereochemistry>
 

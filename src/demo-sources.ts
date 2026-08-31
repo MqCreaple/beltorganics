@@ -5,6 +5,7 @@ export const DEMO_SOURCES: ReadonlyArray<readonly [number, number, string]> = [
   [0, 3, 'c1ccccc1'],
   [-3, 2, 'O=C=O'],
   [2, -3, 'CC(=O)O'],
+  [3, -4, 'CC(=O)[O-]'],
   [-4, -2, 'N'],
   [5, 3, 'Oc1ccccc1'],
   [6, -2, 'c1ccc2ccccc2c1'],

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 import {
   ELEMENTS,
   conjugatedPiSystems,
+  displayedLonePairCount,
   generateMoleculeGeometry,
   hybridizationOf,
+  lonePairDirections,
   partialCharges,
 } from '../../chem';
 import type { AtomId, ElementSymbol, Molecule, Point3D } from '../../chem';
@@ -38,7 +41,8 @@ const ELEMENT_COLOR: Record<ElementSymbol, number> = {
 };
 
 const BALL_RADIUS: Record<ElementSymbol, number> = { C: 0.32, H: 0.22, O: 0.3, N: 0.31 };
-const SPACE_RADIUS: Record<ElementSymbol, number> = { C: 0.72, H: 0.5, O: 0.64, N: 0.66 };
+/** Bondi/Rowland-Taylor van der Waals radii in ångströms. */
+const SPACE_RADIUS: Record<ElementSymbol, number> = { C: 1.7, H: 1.1, O: 1.52, N: 1.55 };
 
 interface ViewerRuntime {
   renderer: THREE.WebGLRenderer;
@@ -324,7 +328,7 @@ function populateMolecule(
   }
 
   if (layer === 'density') addPiElectronClouds(group, positions, piSystems);
-  if (layer === 'orbitals') addPiOrbitals(group, molecule, positions, piSystems);
+  if (layer === 'orbitals') addPiOrbitals(group, positions, piSystems);
   return atomMeshes;
 }
 
@@ -341,25 +345,15 @@ function addBondClouds(group: THREE.Group, molecule: Molecule, positions: Readon
   }
 }
 
-function lonePairCount(molecule: Molecule, atom: AtomId): number {
-  const { element, formalCharge } = molecule.getAtom(atom);
-  const neutral = ELEMENTS[element].lonePairs;
-  return Math.max(0, neutral - formalCharge);
-}
-
 function addLonePairs(group: THREE.Group, molecule: Molecule, atom: AtomId, positions: ReadonlyMap<AtomId, Point3D>): void {
-  const count = lonePairCount(molecule, atom);
+  const count = displayedLonePairCount(molecule, atom);
   if (count === 0) return;
   const center = vectorOf(positions.get(atom)!);
-  const neighbors = molecule.neighbors(atom).map((neighbor) => vectorOf(positions.get(neighbor)!).sub(center).normalize());
-  let away = new THREE.Vector3();
-  for (const neighbor of neighbors) away.sub(neighbor);
-  if (away.lengthSq() < 1e-5) away.set(0, 1, 0);
-  away.normalize();
-  const side = away.clone().cross(Math.abs(away.z) < 0.8 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0)).normalize();
-  for (let pair = 0; pair < count; pair += 1) {
-    const spread = count === 1 ? 0 : (pair - (count - 1) / 2) * 0.7;
-    const direction = away.clone().multiplyScalar(Math.cos(spread)).addScaledVector(side, Math.sin(spread)).normalize();
+  const directions = lonePairDirections(molecule, atom, positions).map(vectorOf);
+  directions.forEach((direction) => {
+    const side = direction.clone()
+      .cross(Math.abs(direction.z) < 0.8 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0))
+      .normalize();
     const lobe = new THREE.Mesh(
       new THREE.SphereGeometry(0.24, 18, 12),
       new THREE.MeshPhongMaterial({ color: 0xe2b53f, transparent: true, opacity: 0.32, depthWrite: false }),
@@ -375,7 +369,7 @@ function addLonePairs(group: THREE.Group, molecule: Molecule, atom: AtomId, posi
       electron.renderOrder = 5;
       group.add(electron);
     }
-  }
+  });
 }
 
 function addPiElectronClouds(group: THREE.Group, positions: ReadonlyMap<AtomId, Point3D>, systems: ReturnType<typeof conjugatedPiSystems>): void {
@@ -383,53 +377,67 @@ function addPiElectronClouds(group: THREE.Group, positions: ReadonlyMap<AtomId, 
     if (system.atoms.length < 2) return;
     const normal = systemNormal(system.atoms, positions, systemIndex);
     const color = PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!;
-    for (const atom of system.atoms) for (const phase of [-1, 1] as const) {
-      const cloud = new THREE.Mesh(
-        new THREE.SphereGeometry(0.44, 18, 12),
-        new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide }),
-      );
-      cloud.scale.set(1, 0.68, 1);
-      cloud.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-      cloud.position.copy(vectorOf(positions.get(atom)!)).addScaledVector(normal, phase * 0.34);
-      cloud.renderOrder = 3;
-      group.add(cloud);
-    }
+    for (const phase of [-1, 1] as const) addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.2, 0.72, 3);
   });
 }
 
 function addPiOrbitals(
   group: THREE.Group,
-  molecule: Molecule,
   positions: ReadonlyMap<AtomId, Point3D>,
   systems: ReturnType<typeof conjugatedPiSystems>,
 ): void {
   systems.forEach((system, systemIndex) => {
     const normal = systemNormal(system.atoms, positions, systemIndex);
     const base = new THREE.Color(PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!);
-    for (const atom of system.atoms) {
-      const center = vectorOf(positions.get(atom)!);
-      const size = molecule.getAtom(atom).element === 'H' ? 0.28 : 0.42;
-      for (const phase of [-1, 1] as const) {
-        const color = base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18);
-        const lobe = new THREE.Mesh(
-          new THREE.SphereGeometry(size, 22, 14),
-          new THREE.MeshPhongMaterial({
-            color,
-            transparent: true,
-            opacity: 0.52,
-            depthWrite: false,
-            shininess: 70,
-            side: THREE.DoubleSide,
-          }),
-        );
-        lobe.scale.set(0.72, 1.38, 0.72);
-        lobe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-        lobe.position.copy(center).addScaledVector(normal, phase * size * 1.15);
-        lobe.renderOrder = 4;
-        group.add(lobe);
-      }
+    for (const phase of [-1, 1] as const) {
+      const color = base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex();
+      addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.5, 0.58, 4);
     }
   });
+}
+
+/** One smooth marching-cubes entity for one side of a complete π system. */
+function addMergedPiSurface(
+  group: THREE.Group,
+  atoms: readonly AtomId[],
+  positions: ReadonlyMap<AtomId, Point3D>,
+  normal: THREE.Vector3,
+  phase: -1 | 1,
+  color: number,
+  opacity: number,
+  radius: number,
+  renderOrder: number,
+): void {
+  const centers = atoms.map((atom) => vectorOf(positions.get(atom)!).addScaledVector(normal, phase * 0.4));
+  const bounds = new THREE.Box3().setFromPoints(centers).expandByScalar(radius * 1.4);
+  const center = bounds.getCenter(new THREE.Vector3());
+  const extent = Math.max(1.8, bounds.getSize(new THREE.Vector3()).x, bounds.getSize(new THREE.Vector3()).y, bounds.getSize(new THREE.Vector3()).z);
+  const material = new THREE.MeshPhongMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    shininess: 65,
+    side: THREE.DoubleSide,
+  });
+  const surface = new MarchingCubes(28, material, false, false, 30_000);
+  surface.isolation = 50;
+  surface.position.copy(center);
+  surface.scale.setScalar(extent / 2);
+  const subtract = 12;
+  const strength = (surface.isolation + subtract) * (radius / extent) ** 2;
+  for (const point of centers) {
+    surface.addBall(
+      (point.x - center.x) / extent + 0.5,
+      (point.y - center.y) / extent + 0.5,
+      (point.z - center.z) / extent + 0.5,
+      strength,
+      subtract,
+    );
+  }
+  surface.update();
+  surface.renderOrder = renderOrder;
+  group.add(surface);
 }
 
 function systemNormal(
