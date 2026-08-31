@@ -19,13 +19,13 @@ Chemistry engine (roadmap steps 1-3 in `AGENTS.md`) lives in `src/chem/`:
 
 - **Molecule data structure** on [graphology](https://graphology.github.io/):
   element and formal charge on atoms, bond order on edges, explicit
-  tetrahedral stereo labels on 4-coordinate sp3 carbons, and cis/trans labels
-  on double bonds. It fills implicit hydrogens (`addImplicitHydrogens`),
+  four-bond tetrahedral stereo tuples on 4-coordinate sp3 carbons, and local
+  cis-reference bond pairs on double bonds. It fills implicit hydrogens (`addImplicitHydrogens`),
   labels hybridization of every non-hydrogen atom (`src/chem/hybridization.ts`,
   incl. the non-VSEPR amide N, furan O, carboxylate, carbocation and
   conjugated-carbanion cases), and perceives conjugated pi systems with their
   electron counts (`src/chem/conjugation.ts`, incl. separate systems for the
-  two perpendicular pi bonds of a triple bond).
+  two perpendicular pi bonds of a triple bond, coordinated 90 degrees apart in the viewer).
 - **SMILES conversion** backed by **RDKit.js** (`@rdkit/rdkit`, the official
   WASM build): `parseSmiles` / `toSmiles` round-trip with full
   stereochemistry - including **ring chiral centres** (proline, cholesterol,

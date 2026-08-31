@@ -9,6 +9,7 @@ import {
   lonePairDirections,
   parseSmiles,
   piSystemNormal,
+  piSystemNormals,
   resonanceAdjustedBondLengths,
 } from '../src/chem';
 import { DEMO_SOURCES } from '../src/demo-sources';
@@ -96,7 +97,7 @@ describe('topology-derived 3D molecular geometry', () => {
   it('renders opposite tetrahedral labels as opposite handed conformers', () => {
     const volumes = ['N[C@@H](C)C(=O)O', 'N[C@H](C)C(=O)O'].map((smiles) => {
       const molecule = parseSmiles(smiles);
-      const center = molecule.atoms().find((atom) => molecule.getAtom(atom).stereo?.bonds !== undefined)!;
+      const center = molecule.atoms().find((atom) => molecule.getAtom(atom).stereo !== undefined)!;
       // Compare against the same graph-neighbour ordering. The stereo label's
       // own bond order intentionally has one parity for both enantiomers; it
       // is the spatial arrangement of these fixed neighbours that must flip.
@@ -118,7 +119,7 @@ describe('topology-derived 3D molecular geometry', () => {
       ['C/C=C/C', -1],
     ] as const) {
       const molecule = parseSmiles(smiles);
-      const doubleBond = molecule.bonds().map((bond) => molecule.getBond(bond)).find((bond) => bond.stereo === (expectedSign > 0 ? 'cis' : 'trans'))!;
+      const doubleBond = molecule.bonds().map((bond) => molecule.getBond(bond)).find((bond) => bond.order === 2 && bond.stereo !== undefined)!;
       const { source, target } = doubleBond;
       const sourceSubstituent = molecule.neighbors(source).find((atom) => atom !== target && molecule.getAtom(atom).element !== 'H')!;
       const targetSubstituent = molecule.neighbors(target).find((atom) => atom !== source && molecule.getAtom(atom).element !== 'H')!;
@@ -191,6 +192,18 @@ describe('topology-derived 3D molecular geometry', () => {
     const normal = piSystemNormal(molecule, system.atoms, geometry.positions);
     expect(Math.abs(dot(normal, axis) / length(axis))).toBeLessThan(1e-6);
     expect(Math.abs(dot(normal, side) / length(side))).toBeLessThan(1e-6);
+  });
+
+  it.each(['C#C', 'C=CC#CC=C'])('keeps the two triple-bond pi systems orthogonal in %s', (smiles) => {
+    const molecule = parseSmiles(smiles);
+    const geometry = generateMoleculeGeometry(molecule);
+    const systems = conjugatedPiSystems(molecule);
+    const triple = molecule.bonds().map((bond) => molecule.getBond(bond)).find((bond) => bond.order === 3)!;
+    const sharing = systems.map((system, index) => ({ system, index })).filter(({ system }) =>
+      system.atoms.includes(triple.source) && system.atoms.includes(triple.target));
+    expect(sharing).toHaveLength(2);
+    const normals = piSystemNormals(molecule, systems, geometry.positions);
+    expect(Math.abs(dot(normals[sharing[0]!.index]!, normals[sharing[1]!.index]!))).toBeLessThan(1e-6);
   });
 
   it('keeps acetic acid C-O bonds distinct but equalizes acetate', () => {

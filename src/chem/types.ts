@@ -29,31 +29,28 @@ export type TetrahedralDirection = 'clockwise' | 'counterclockwise';
  * chirality specification: the four bonds incident to the centre in a given
  * order.
  *
- * The winding convention is fixed: looking down `bonds[0]` (from the
+ * The winding convention is fixed: looking down index 0 (from the
  * substituent toward the centre), the three trailing bonds
- * (bonds[1], bonds[2], bonds[3]) wind **counterclockwise**. The mirror-image
+ * (indices 1, 2 and 3) wind **counterclockwise**. The mirror-image
  * arrangement is expressed by an odd permutation of the order (swap any two
  * bonds), so no explicit direction field is needed - see
  * `src/chem/tetrahedral.ts` (`orderIndicator`, `directionFromBond`,
  * `sameTetrahedron`).
  *
  * The order is arbitrary (e.g. the order the neighbours appear in the SMILES
- * that produced the label). `bonds` is omitted when the centre is known to be
- * stereogenic but its configuration is unspecified.
+ * that produced the label). An absent atom `stereo` field means unspecified.
  */
-export interface TetrahedralStereo {
-  /** The four bonds incident to the centre, in order; omitted when unspecified. */
-  bonds?: [BondId, BondId, BondId, BondId];
-}
+export type TetrahedralStereo = [BondId, BondId, BondId, BondId];
 
 /**
  * Double-bond geometry.
  *
- * The player-facing cis/trans interpretation, read directly from the SMILES
- * directional-bond tokens when parsing (see `src/chem/smiles.ts`).
- * 'either' = explicitly non-stereogenic double bond.
+ * Two substituent bonds known to be cis across the double bond. For any pair
+ * of substituent bonds, equal membership in this tuple means cis and unequal
+ * membership means trans (pairs on the same endpoint are not compared).
+ * An absent bond `stereo` field means unspecified geometry.
  */
-export type BondGeometryStereo = 'cis' | 'trans' | 'either' | 'unspecified';
+export type BondGeometryStereo = [BondId, BondId];
 
 /** Static properties of one of the four game elements. */
 export interface ElementInfo {

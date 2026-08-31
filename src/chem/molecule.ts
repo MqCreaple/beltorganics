@@ -58,7 +58,8 @@ export type MoleculeIssueCode =
   | 'valence-exceeded'
   | 'stereo-on-non-tetrahedral'
   | 'stereo-bonds-mismatch'
-  | 'stereo-on-non-double';
+  | 'stereo-on-non-double'
+  | 'geometry-bonds-mismatch';
 
 export interface MoleculeIssue {
   code: MoleculeIssueCode;
@@ -393,9 +394,9 @@ export class Molecule {
             atom,
             message: `stereo label on ${atom} is not a 4-coordinate sp3 carbon`,
           });
-        } else if (view.stereo.bonds !== undefined) {
+        } else {
           const incident = new Set(this.bondsOf(atom));
-          const { bonds } = view.stereo;
+          const bonds = view.stereo;
           const invalid =
             bonds.length !== 4 || new Set(bonds).size !== 4 || bonds.some((b) => !incident.has(b));
           if (invalid) {
@@ -420,6 +421,22 @@ export class Molecule {
             `geometry label "${view.stereo}" on a bond of order ${view.order} ` +
             '(only double bonds carry geometry)',
         });
+      } else if (view.stereo !== undefined) {
+        const [first, second] = view.stereo;
+        const firstView = this.hasBond(first) ? this.getBond(first) : undefined;
+        const secondView = this.hasBond(second) ? this.getBond(second) : undefined;
+        const touches = (candidate: BondView | undefined, atom: AtomId) =>
+          candidate !== undefined && (candidate.source === atom || candidate.target === atom);
+        const valid = first !== second
+          && ((touches(firstView, view.source) && touches(secondView, view.target))
+            || (touches(firstView, view.target) && touches(secondView, view.source)));
+        if (!valid) {
+          issues.push({
+            code: 'geometry-bonds-mismatch',
+            bond,
+            message: `double-bond stereo on ${bond} must reference one substituent bond at each endpoint`,
+          });
+        }
       }
     }
     return issues;
@@ -450,15 +467,16 @@ export class Molecule {
       if (source === undefined || target === undefined) {
         throw new Error(`fromJSON: bond ${bond.id} references unknown atoms`);
       }
-      const id = molecule.addBond(
-        source,
-        target,
-        bond.order,
-        bond.stereo !== undefined ? { stereo: bond.stereo } : {},
-      );
+      const id = molecule.addBond(source, target, bond.order);
       bondRemap.set(bond.id, id);
     }
-    // Tetrahedral labels reference bond ids, which fromJSON regenerates.
+    // Stereo labels reference bond ids, which fromJSON regenerates.
+    for (const bond of data.bonds) {
+      if (bond.stereo === undefined) continue;
+      const newBond = bondRemap.get(bond.id);
+      if (newBond === undefined) throw new Error(`fromJSON: bond ${bond.id} is missing`);
+      molecule.setBondStereo(newBond, remapDoubleBondStereo(bond.stereo, bondRemap));
+    }
     for (const atom of data.atoms) {
       if (atom.stereo === undefined) continue;
       const newAtom = atomRemap.get(atom.id);
@@ -478,13 +496,24 @@ function remapTetrahedralStereo(
   stereo: TetrahedralStereo,
   bondRemap: ReadonlyMap<BondId, BondId>,
 ): TetrahedralStereo {
-  if (stereo.bonds === undefined) return {};
-  const bonds = stereo.bonds.map((id) => {
+  const bonds = stereo.map((id) => {
     const mapped = bondRemap.get(id);
     if (mapped === undefined) {
       throw new Error(`fromJSON: tetrahedral label references unknown bond ${id}`);
     }
     return mapped;
   });
-  return { bonds: bonds as [BondId, BondId, BondId, BondId] };
+  return bonds as TetrahedralStereo;
+}
+
+/** Re-target a double-bond cis-reference pair through a bond-id remap. */
+function remapDoubleBondStereo(
+  stereo: BondGeometryStereo,
+  bondRemap: ReadonlyMap<BondId, BondId>,
+): BondGeometryStereo {
+  return stereo.map((id) => {
+    const mapped = bondRemap.get(id);
+    if (mapped === undefined) throw new Error(`fromJSON: double-bond stereo references unknown bond ${id}`);
+    return mapped;
+  }) as BondGeometryStereo;
 }

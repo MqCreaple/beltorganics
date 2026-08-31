@@ -22,8 +22,8 @@ import { tokenForOrder } from './tetrahedral';
  *   (right after the bracket), then branches in written order and finally
  *   the continuation. This also covers ring chiral centres (e.g. proline,
  *   cholesterol), so the game round-trips them like acyclic ones.
- * - double-bond geometry as `/` / `\` directional single bonds (equal tokens
- *   on both sides = trans, different = cis, matching RDKit).
+ * - double-bond geometry as `/` / `\` directional single bonds, derived from
+ *   the stored cis-reference pair without ranking substituent groups.
  */
 
 /** Nodes to emit: heavy atoms plus hydrogens with no heavy neighbour (H2). */
@@ -58,23 +58,28 @@ function chargeSuffix(charge: number): string {
 }
 
 /**
- * One non-hydrogen substituent bond of a double-bond atom (the bond to the
- * single non-H neighbour other than the other double-bond atom). The game's
- * plain cis/trans label requires exactly one per end.
+ * A writable non-hydrogen substituent bond at one double-bond endpoint.
+ * Substituted alkenes may have two choices; either is valid because tuple
+ * membership determines its relation to the choice made at the other end.
  */
-function substituentOn(molecule: Molecule, atom: AtomId, otherDoubleAtom: AtomId): BondId {
-  const candidates = molecule
-    .neighbors(atom)
-    .filter((n) => n !== otherDoubleAtom && molecule.getAtom(n).element !== 'H');
-  if (candidates.length !== 1) {
+function writableSubstituentOn(
+  molecule: Molecule,
+  atom: AtomId,
+  doubleBond: BondId,
+  parent: ReadonlyMap<AtomId, AtomId | undefined>,
+): BondId {
+  const candidates = molecule.bondsOf(atom).filter((bondId) => {
+    if (bondId === doubleBond || !isTreeEdge(molecule, bondId, parent)) return false;
+    const bond = molecule.getBond(bondId);
+    const other = bond.source === atom ? bond.target : bond.source;
+    return molecule.getAtom(other).element !== 'H';
+  });
+  if (candidates.length === 0) {
     throw new Error(
-      `smiles writer: double-bond stereo needs exactly one non-hydrogen substituent on each end ` +
-        `(found ${candidates.length} on ${atom}); not supported`,
+      `smiles writer: double-bond stereo needs a writable non-hydrogen substituent on ${atom}`,
     );
   }
-  const bond = molecule.bondBetween(atom, candidates[0]!);
-  if (bond === undefined) throw new Error('smiles writer: missing substituent bond');
-  return bond;
+  return candidates.sort((a, b) => a.localeCompare(b))[0]!;
 }
 
 /**
@@ -129,7 +134,7 @@ function buildTree(molecule: Molecule): {
 
   const nodes = emittableAtoms(molecule);
   const chiral = new Set<AtomId>(
-    nodes.filter((id) => molecule.getAtom(id).stereo?.bonds !== undefined),
+    nodes.filter((id) => molecule.getAtom(id).stereo !== undefined),
   );
   const roots = [...nodes].sort((a, b) => {
     const aChiral = chiral.has(a) ? 1 : 0;
@@ -154,23 +159,71 @@ function bondSymbol(order: number): string {
   return '';
 }
 
+/** +1 when a tree bond is emitted away from the endpoint, -1 when toward it. */
+function emissionOrientation(
+  molecule: Molecule,
+  bondId: BondId,
+  endpoint: AtomId,
+  parent: ReadonlyMap<AtomId, AtomId | undefined>,
+): 1 | -1 {
+  const bond = molecule.getBond(bondId);
+  const emittedFrom = parent.get(bond.target) === bond.source ? bond.source
+    : parent.get(bond.source) === bond.target ? bond.target
+      : undefined;
+  if (emittedFrom === undefined) throw new Error('smiles writer: stereo reference is not a tree bond');
+  return emittedFrom === endpoint ? 1 : -1;
+}
+
 /** Directional single-bond tokens around stereo double bonds. */
-function ezTokens(molecule: Molecule): Map<BondId, '/' | '\\'> {
-  const tokens = new Map<BondId, '/' | '\\'>();
+function ezTokens(
+  molecule: Molecule,
+  parent: ReadonlyMap<AtomId, AtomId | undefined>,
+): Map<BondId, '/' | '\\'> {
+  // Each edge says sign(other) = factor * sign(this), where slash is +1.
+  const constraints = new Map<BondId, Array<{ other: BondId; factor: 1 | -1 }>>();
+  const connect = (first: BondId, second: BondId, factor: 1 | -1): void => {
+    const a = constraints.get(first) ?? [];
+    a.push({ other: second, factor });
+    constraints.set(first, a);
+    const b = constraints.get(second) ?? [];
+    b.push({ other: first, factor });
+    constraints.set(second, b);
+  };
   for (const id of molecule.bonds()) {
     const bond = molecule.getBond(id);
-    if (bond.order !== 2 || (bond.stereo !== 'cis' && bond.stereo !== 'trans')) continue;
-    const first = substituentOn(molecule, bond.source, bond.target);
-    const second = substituentOn(molecule, bond.target, bond.source);
-    if (bond.stereo === 'trans') {
-      tokens.set(first, '/');
-      tokens.set(second, '/');
-    } else {
-      // Different tokens on the two sides => cis (C/C=C\C).
-      tokens.set(first, '/');
-      tokens.set(second, '\\');
+    if (bond.order !== 2 || bond.stereo === undefined) continue;
+    const first = writableSubstituentOn(molecule, bond.source, id, parent);
+    const second = writableSubstituentOn(molecule, bond.target, id, parent);
+    const cis = bond.stereo.includes(first) === bond.stereo.includes(second);
+    const firstOrientation = emissionOrientation(molecule, first, bond.source, parent);
+    const secondOrientation = emissionOrientation(molecule, second, bond.target, parent);
+    const factor = ((cis ? 1 : -1) * firstOrientation * secondOrientation) as 1 | -1;
+    connect(first, second, factor);
+  }
+
+  const signs = new Map<BondId, 1 | -1>();
+  for (const root of constraints.keys()) {
+    if (signs.has(root)) continue;
+    signs.set(root, 1);
+    const queue = [root];
+    for (let index = 0; index < queue.length; index += 1) {
+      const current = queue[index]!;
+      for (const { other, factor } of constraints.get(current) ?? []) {
+        const expected = (signs.get(current)! * factor) as 1 | -1;
+        const existing = signs.get(other);
+        if (existing !== undefined && existing !== expected) {
+          throw new Error('smiles writer: inconsistent double-bond stereo constraints');
+        }
+        if (existing === undefined) {
+          signs.set(other, expected);
+          queue.push(other);
+        }
+      }
     }
   }
+
+  const tokens = new Map<BondId, '/' | '\\'>();
+  for (const [bond, sign] of signs) tokens.set(bond, sign === 1 ? '/' : '\\');
   return tokens;
 }
 
@@ -250,7 +303,7 @@ function atomToken(
 
   let token = '';
   const stereo = view.stereo;
-  if (stereo !== undefined && stereo.bonds !== undefined) {
+  if (stereo !== undefined) {
     const stringBonds = stringBondsFor(molecule, atom, parent, children, ringDigits);
     token = tokenForOrder(stereo, stringBonds);
   }
@@ -268,15 +321,7 @@ function atomToken(
  */
 export function smilesFromMolecule(molecule: Molecule): string {
   const { parent, children, ringDigits } = buildTree(molecule);
-  const tokens = ezTokens(molecule);
-
-  // Reject E/Z whose substituent bond is a ring closure (not representable
-  // with this writer's directional-bond tokens).
-  for (const bond of tokens.keys()) {
-    if (!isTreeEdge(molecule, bond, parent)) {
-      throw new Error('smiles writer: double-bond stereo on a ring substituent is not supported yet');
-    }
-  }
+  const tokens = ezTokens(molecule, parent);
 
   const roots = emittableAtoms(molecule).filter((id) => parent.get(id) === undefined);
   const components: string[] = [];
@@ -308,7 +353,7 @@ export function smilesFromMolecule(molecule: Molecule): string {
 function isTreeEdge(
   molecule: Molecule,
   bond: BondId,
-  parent: Map<AtomId, AtomId | undefined>,
+  parent: ReadonlyMap<AtomId, AtomId | undefined>,
 ): boolean {
   const view = molecule.getBond(bond);
   return parent.get(view.source) === view.target || parent.get(view.target) === view.source;

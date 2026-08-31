@@ -115,7 +115,7 @@ describe('molecular formula and hydrogens', () => {
 describe('validation', () => {
   it('flags stereo labels on non-tetrahedral atoms', () => {
     const m = new Molecule();
-    const o = m.addAtom('O', { stereo: { bonds: ['b0', 'b1', 'b2', 'b3'] } });
+    const o = m.addAtom('O', { stereo: ['b0', 'b1', 'b2', 'b3'] });
     m.addBond(o, m.addAtom('H'));
     const issues = m.validate();
     expect(issues.some((i) => i.code === 'stereo-on-non-tetrahedral')).toBe(true);
@@ -125,7 +125,7 @@ describe('validation', () => {
     const m = new Molecule();
     const a = m.addAtom('C');
     const b = m.addAtom('C');
-    m.addBond(a, b, 1, { stereo: 'cis' });
+    m.addBond(a, b, 1, { stereo: ['b1', 'b2'] });
     const issues = m.validate();
     expect(issues.some((i) => i.code === 'stereo-on-non-double')).toBe(true);
   });
@@ -134,7 +134,7 @@ describe('validation', () => {
     // C=O with two C-H bonds: the carbon is sp2 / trigonal planar and cannot
     // carry tetrahedral stereochemistry.
     const m = new Molecule();
-    const carbonyl = m.addAtom('C', { stereo: { bonds: ['b0', 'b1', 'b2', 'b3'] } });
+    const carbonyl = m.addAtom('C', { stereo: ['b0', 'b1', 'b2', 'b3'] });
     const o = m.addAtom('O');
     m.addBond(carbonyl, o, 2);
     m.addBond(carbonyl, m.addAtom('H'));
@@ -169,7 +169,7 @@ describe('serialization', () => {
     m.addBond(chiral, m.addAtom('N'));
     const methyl = m.addAtom('C');
     m.addBond(chiral, methyl);
-    const label: TetrahedralStereo = { bonds: m.bondsOf(chiral) as [string, string, string, string] };
+    const label: TetrahedralStereo = m.bondsOf(chiral) as TetrahedralStereo;
     m.setAtomStereo(chiral, label);
     expect(m.isTetrahedralCenter(chiral)).toBe(true);
     expect(m.validate()).toHaveLength(0);
@@ -186,7 +186,7 @@ describe('serialization', () => {
       )!;
     // fromJSON remaps the label's bond ids; the chirality (measured by the
     // canonical name) survives.
-    expect(restored.getAtom(restoredChiral).stereo?.bonds).toBeDefined();
+    expect(restored.getAtom(restoredChiral).stereo).toBeDefined();
     expect(restored.validate()).toHaveLength(0);
     expect(toSmiles(restored)).toBe(toSmiles(m));
   });
@@ -298,7 +298,10 @@ describe('lazy RDKit representation (getRdkitMolecule)', () => {
     const m = parseSmiles('CC=CC');
     const doubleBond = m.bonds().find((id) => m.getBond(id).order === 2)!;
     const r1 = m.getRdkitMolecule();
-    m.setBondStereo(doubleBond, 'cis');
+    const { source, target } = m.getBond(doubleBond);
+    const first = m.bondsOf(source).find((bond) => bond !== doubleBond && m.getAtom(m.getBond(bond).source === source ? m.getBond(bond).target : m.getBond(bond).source).element !== 'H')!;
+    const second = m.bondsOf(target).find((bond) => bond !== doubleBond && m.getAtom(m.getBond(bond).source === target ? m.getBond(bond).target : m.getBond(bond).source).element !== 'H')!;
+    m.setBondStereo(doubleBond, [first, second]);
     const r2 = m.getRdkitMolecule();
     expect(r2).not.toBe(r1);
     expect(toSmiles(m)).toBe('C/C=C\\C');

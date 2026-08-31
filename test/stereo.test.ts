@@ -33,33 +33,30 @@ describe('tetrahedral stereo centres', () => {
     m.addBond(c, m.addAtom('O'));
     m.addBond(c, m.addAtom('N'));
     m.addBond(c, m.addAtom('C'));
-    const label: TetrahedralStereo = { bonds: m.bondsOf(c) as [string, string, string, string] };
+    const label: TetrahedralStereo = m.bondsOf(c) as TetrahedralStereo;
     m.setAtomStereo(c, label);
     expect(m.getAtom(c).stereo).toEqual(label);
     expect(m.validate()).toHaveLength(0);
 
     // The mirror image is an odd permutation of the order (swap two bonds).
     const [b0, b1, b2, b3] = m.bondsOf(c);
-    m.setAtomStereo(c, { bonds: [b0!, b1!, b3!, b2!] });
+    m.setAtomStereo(c, [b0!, b1!, b3!, b2!]);
     expect(m.validate()).toHaveLength(0);
 
     m.setAtomStereo(c, undefined);
     expect(m.getAtom(c).stereo).toBeUndefined();
   });
 
-  it('accepts an unspecified label (no bonds) on a valid centre and rejects it elsewhere', () => {
+  it('uses an absent label for unspecified tetrahedral geometry', () => {
     const m = new Molecule();
     const c = m.addAtom('C');
     m.addBond(c, m.addAtom('H'));
     m.addBond(c, m.addAtom('O'));
     m.addBond(c, m.addAtom('N'));
     m.addBond(c, m.addAtom('C'));
-    m.setAtomStereo(c, {});
+    m.setAtomStereo(c, undefined);
     expect(m.validate()).toHaveLength(0);
-
-    const o = m.addAtom('O', { stereo: {} });
-    expect(m.validate().some((i) => i.code === 'stereo-on-non-tetrahedral')).toBe(true);
-    void o;
+    expect(m.getAtom(c).stereo).toBeUndefined();
   });
 
   it('flags a tetrahedral label that does not match the incident bonds', () => {
@@ -69,26 +66,32 @@ describe('tetrahedral stereo centres', () => {
     m.addBond(c, m.addAtom('O'));
     m.addBond(c, m.addAtom('N'));
     m.addBond(c, m.addAtom('C'));
-    m.setAtomStereo(c, { bonds: ['zz0', 'zz1', 'zz2', 'zz3'] });
+    m.setAtomStereo(c, ['zz0', 'zz1', 'zz2', 'zz3']);
     const issues = m.validate();
     expect(issues.some((i) => i.code === 'stereo-bonds-mismatch')).toBe(true);
   });
 });
 
 describe('double-bond geometry', () => {
-  it('stores and mutates cis/trans labels on a double bond', () => {
+  it('stores and mutates cis-reference pairs on a double bond', () => {
     const m = new Molecule();
     const c1 = m.addAtom('C');
     const c2 = m.addAtom('C');
     const c3 = m.addAtom('C');
     const c4 = m.addAtom('C');
-    m.addBond(c1, c2, 1);
-    const db = m.addBond(c2, c3, 2, { stereo: 'trans' });
-    m.addBond(c3, c4, 1);
-    expect(m.getBond(db).stereo).toBe('trans');
+    const first = m.addBond(c1, c2, 1);
+    const db = m.addBond(c2, c3, 2);
+    const second = m.addBond(c3, c4, 1);
+    m.addImplicitHydrogens();
+    const secondHydrogen = m.bondsOf(c3).find((bond) => bond !== db && bond !== second)!;
+    m.setBondStereo(db, [first, secondHydrogen]);
+    expect(m.getBond(db).stereo).toEqual([first, secondHydrogen]);
     expect(m.validate()).toHaveLength(0);
 
-    m.setBondStereo(db, 'cis');
-    expect(m.getBond(db).stereo).toBe('cis');
+    m.setBondStereo(db, [first, second]);
+    expect(m.getBond(db).stereo).toEqual([first, second]);
+
+    m.setBondStereo(db, [first, first]);
+    expect(m.validate().some((issue) => issue.code === 'geometry-bonds-mismatch')).toBe(true);
   });
 });

@@ -310,6 +310,35 @@ export function piSystemNormal(
   return systemIndex % 2 === 0 ? canonicalNormal(firstNormal) : canonicalNormal(cross(axis, firstNormal));
 }
 
+/**
+ * Plane normals for all perceived π systems, coordinated across triple bonds.
+ * The two π systems sharing a C≡C/C≡N bond must be mutually perpendicular;
+ * deriving each independently fails when one is part of a longer conjugated
+ * system (for example divinylacetylene).
+ */
+export function piSystemNormals(
+  molecule: Molecule,
+  systems: readonly { atoms: readonly AtomId[] }[],
+  positions: ReadonlyMap<AtomId, Point3D>,
+): Point3D[] {
+  const normals: Point3D[] = [];
+  systems.forEach((system, index) => {
+    let normal = piSystemNormal(molecule, system.atoms, positions, index);
+    for (let previous = 0; previous < index; previous += 1) {
+      const shared = system.atoms.filter((atom) => systems[previous]!.atoms.includes(atom));
+      if (shared.length !== 2) continue;
+      const sharedBond = molecule.bondBetween(shared[0]!, shared[1]!);
+      if (sharedBond === undefined || molecule.getBond(sharedBond).order !== 3) continue;
+      const axis = unit(sub(positions.get(shared[1]!)!, positions.get(shared[0]!)!));
+      const perpendicularNormal = cross(axis, normals[previous]!);
+      if (magnitude(perpendicularNormal) > 1e-6) normal = canonicalNormal(perpendicularNormal);
+      break;
+    }
+    normals.push(normal);
+  });
+  return normals;
+}
+
 function canonicalNormal(normal: Point3D): Point3D {
   const result = unit(normal);
   return result.z < 0 || (Math.abs(result.z) < 1e-6 && result.y < 0) ? mul(result, -1) : result;
@@ -333,7 +362,7 @@ function componentRoots(molecule: Molecule): AtomId[] {
       for (const neighbor of molecule.neighbors(atom)) if (unseen.delete(neighbor)) queue.push(neighbor);
     }
     component.sort((a, b) => {
-      const stereo = Number(molecule.getAtom(b).stereo?.bonds !== undefined) - Number(molecule.getAtom(a).stereo?.bonds !== undefined);
+      const stereo = Number(molecule.getAtom(b).stereo !== undefined) - Number(molecule.getAtom(a).stereo !== undefined);
       const heavy = Number(molecule.getAtom(b).element !== 'H') - Number(molecule.getAtom(a).element !== 'H');
       return stereo || heavy || molecule.neighborCount(b) - molecule.neighborCount(a) || a.localeCompare(b);
     });
@@ -344,7 +373,7 @@ function componentRoots(molecule: Molecule): AtomId[] {
 
 function orientDoubleBond(molecule: Molecule, atom: AtomId, parent: AtomId, positions: ReadonlyMap<AtomId, Point3D>, directions: Map<AtomId, Point3D>): void {
   const stereo = molecule.getBond(molecule.bondBetween(atom, parent)!).stereo;
-  if (stereo !== 'cis' && stereo !== 'trans') return;
+  if (stereo === undefined) return;
   const here = molecule.neighbors(atom).find((n) => n !== parent && molecule.getAtom(n).element !== 'H');
   const there = molecule.neighbors(parent).find((n) => n !== atom && molecule.getAtom(n).element !== 'H');
   if (here === undefined || there === undefined || positions.get(there) === undefined) return;
@@ -352,7 +381,10 @@ function orientDoubleBond(molecule: Molecule, atom: AtomId, parent: AtomId, posi
   const rawOther = sub(positions.get(there)!, positions.get(parent)!);
   const otherSide = sub(rawOther, mul(axis, dot(rawOther, axis)));
   const thisDirection = directions.get(here)!; const thisSide = sub(thisDirection, mul(axis, dot(thisDirection, axis)));
-  if ((dot(otherSide, thisSide) > 0) === (stereo === 'cis')) return;
+  const hereBond = molecule.bondBetween(atom, here)!;
+  const thereBond = molecule.bondBetween(parent, there)!;
+  const cis = stereo.includes(hereBond) === stereo.includes(thereBond);
+  if ((dot(otherSide, thisSide) > 0) === cis) return;
   for (const neighbor of molecule.neighbors(atom)) if (neighbor !== parent) {
     const direction = directions.get(neighbor)!;
     directions.set(neighbor, sub(mul(axis, 2 * dot(direction, axis)), direction));
@@ -362,7 +394,7 @@ function orientDoubleBond(molecule: Molecule, atom: AtomId, parent: AtomId, posi
 function seedDirections(molecule: Molecule, atom: AtomId, parent: AtomId | undefined, positions: ReadonlyMap<AtomId, Point3D>): Map<AtomId, Point3D> {
   const neighbors = molecule.neighbors(atom); const result = new Map<AtomId, Point3D>();
   const parentDirection = parent === undefined ? undefined : unit(sub(positions.get(parent)!, positions.get(atom)!));
-  const stereo = molecule.getAtom(atom).stereo?.bonds;
+  const stereo = molecule.getAtom(atom).stereo;
   if (stereo !== undefined) {
     const parentBond = parent === undefined ? undefined : molecule.bondBetween(atom, parent);
     const parentIndex = parentBond === undefined ? -1 : stereo.indexOf(parentBond);
@@ -446,7 +478,7 @@ function seedFromRdkitDepiction(molecule: Molecule, positions: Map<AtomId, Point
 
 function seedTetrahedralParity(molecule: Molecule, positions: Map<AtomId, Point3D>): void {
   for (const center of molecule.atoms()) {
-    const stereo = molecule.getAtom(center).stereo?.bonds;
+    const stereo = molecule.getAtom(center).stereo;
     if (stereo === undefined) continue;
     const neighbors = molecule.neighbors(center);
     const movable = neighbors.find((atom) => molecule.getAtom(atom).element === 'H')
@@ -553,6 +585,23 @@ function applyDistance(positions: Map<AtomId, Point3D>, item: DistanceConstraint
   positions.set(item.a, add(first, correction)); positions.set(item.b, sub(second, correction));
 }
 
+function applyDistanceToHydrogens(
+  molecule: Molecule,
+  positions: Map<AtomId, Point3D>,
+  item: DistanceConstraint,
+): void {
+  const firstMovable = molecule.getAtom(item.a).element === 'H';
+  const secondMovable = molecule.getAtom(item.b).element === 'H';
+  if (!firstMovable && !secondMovable) return;
+  const first = positions.get(item.a)!; const second = positions.get(item.b)!;
+  let delta = sub(second, first); let length = magnitude(delta);
+  if (length < 1e-8) { delta = unit({ x: atomNumber(item.a) + 1, y: atomNumber(item.b) + 2, z: 0.37 }); length = 1; }
+  const movableCount = Number(firstMovable) + Number(secondMovable);
+  const correction = mul(delta, (length - item.distance) / length * item.strength / movableCount);
+  if (firstMovable) positions.set(item.a, add(first, correction));
+  if (secondMovable) positions.set(item.b, sub(second, correction));
+}
+
 function bestPlane(points: readonly Point3D[]): { center: Point3D; normal: Point3D } {
   let center = { x: 0, y: 0, z: 0 }; for (const point of points) center = add(center, point); center = mul(center, 1 / points.length);
   let xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
@@ -584,6 +633,26 @@ function separateAtoms(molecule: Molecule, positions: Map<AtomId, Point3D>, bond
     if (distance < 1e-8) { delta = unit({ x: atomNumber(a) + 1, y: atomNumber(b) + 3, z: 0.73 }); distance = 1; }
     const correction = mul(delta, (minimum - distance) / distance * 0.5 * strength);
     positions.set(a, sub(first, correction)); positions.set(b, add(second, correction));
+  }
+}
+
+function separateHydrogens(molecule: Molecule, positions: Map<AtomId, Point3D>, bonded: ReadonlySet<string>, strength: number): void {
+  const atoms = molecule.atoms();
+  for (let i = 0; i < atoms.length; i += 1) for (let j = i + 1; j < atoms.length; j += 1) {
+    const a = atoms[i]!; const b = atoms[j]!;
+    if (bonded.has(pairKey(a, b))) continue;
+    const aMovable = molecule.getAtom(a).element === 'H';
+    const bMovable = molecule.getAtom(b).element === 'H';
+    if (!aMovable && !bMovable) continue;
+    const first = positions.get(a)!; const second = positions.get(b)!;
+    let delta = sub(second, first); let distance = magnitude(delta);
+    const minimum = (COVALENT_RADIUS[molecule.getAtom(a).element] + COVALENT_RADIUS[molecule.getAtom(b).element]) * 0.72;
+    if (distance >= minimum) continue;
+    if (distance < 1e-8) { delta = unit({ x: atomNumber(a) + 1, y: atomNumber(b) + 3, z: 0.73 }); distance = 1; }
+    const movableCount = Number(aMovable) + Number(bMovable);
+    const correction = mul(delta, (minimum - distance) / distance * strength / movableCount);
+    if (aMovable) positions.set(a, sub(first, correction));
+    if (bMovable) positions.set(b, add(second, correction));
   }
 }
 
@@ -637,7 +706,32 @@ function optimize(molecule: Molecule, positions: Map<AtomId, Point3D>, adjusted:
       separateCrossings(molecule,positions,0.65);
     }
   }
-  for (let iteration = 0; iteration < 100; iteration += 1) { for (const rule of rules) applyDistance(positions,{...rule,strength:rule.strength*0.7}); for (const plane of planes) flattenGroup(positions,plane,1); }
+  if (molecule.atomCount >= 80) {
+    // Large explicit-H molecules converge more reliably in two stages. First
+    // settle the heavy skeleton without peripheral hydrogens pulling it out
+    // of shape, then rebuild/relax only the hydrogen positions while treating
+    // the heavy coordinates as anchors.
+    const heavyRules = rules.filter(({ a, b }) => molecule.getAtom(a).element !== 'H' && molecule.getAtom(b).element !== 'H');
+    const heavyPlanes = planes.map((plane) => plane.filter((atom) => molecule.getAtom(atom).element !== 'H'));
+    for (let iteration = 0; iteration < 300; iteration += 1) {
+      for (const rule of heavyRules) applyDistance(positions, { ...rule, strength: rule.strength * 0.72 });
+      for (const plane of heavyPlanes) flattenGroup(positions, plane, 1);
+      if (iteration % 3 === 0) separateAtoms(molecule, positions, bonded, 0.18);
+      if (iteration % 6 === 0) separateCrossings(molecule, positions, 0.2);
+    }
+    for (const atom of molecule.atoms()) if (molecule.getAtom(atom).element !== 'H') {
+      placeHydrogenSeeds(molecule, atom, positions, adjusted);
+    }
+    const hydrogenRules = rules.filter(({ a, b }) => molecule.getAtom(a).element === 'H' || molecule.getAtom(b).element === 'H');
+    for (let iteration = 0; iteration < 160; iteration += 1) {
+      for (const rule of hydrogenRules) applyDistanceToHydrogens(molecule, positions, { ...rule, strength: rule.strength * 0.55 });
+      separateHydrogens(molecule, positions, bonded, 0.35);
+    }
+    for (const plane of planes) flattenGroup(positions, plane, 1);
+    separateHydrogens(molecule, positions, bonded, 1);
+  } else {
+    for (let iteration = 0; iteration < 100; iteration += 1) { for (const rule of rules) applyDistance(positions,{...rule,strength:rule.strength*0.7}); for (const plane of planes) flattenGroup(positions,plane,1); }
+  }
 }
 
 function centerPositions(positions: Map<AtomId, Point3D>): void {

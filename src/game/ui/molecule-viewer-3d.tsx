@@ -15,7 +15,7 @@ import {
   hybridizationOf,
   lonePairDirections,
   partialCharges,
-  piSystemNormal,
+  piSystemNormals,
 } from '../../chem';
 import type { AtomId, ElementSymbol, Molecule, MoleculeGeometry, Point3D } from '../../chem';
 
@@ -422,9 +422,10 @@ function addLonePairs(group: THREE.Group, molecule: Molecule, atom: AtomId, posi
 }
 
 function addPiElectronClouds(group: THREE.Group, molecule: Molecule, positions: ReadonlyMap<AtomId, Point3D>, systems: ReturnType<typeof conjugatedPiSystems>): void {
+  const normals = piSystemNormals(molecule, systems, positions);
   systems.forEach((system, systemIndex) => {
     if (system.atoms.length < 2) return;
-    const normal = vectorOf(piSystemNormal(molecule, system.atoms, positions, systemIndex));
+    const normal = vectorOf(normals[systemIndex]!);
     const color = PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!;
     for (const phase of [-1, 1] as const) addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.2, 0.72, 3);
   });
@@ -437,8 +438,9 @@ function addPiOrbitals(
   systems: ReturnType<typeof conjugatedPiSystems>,
 ): THREE.Mesh[] {
   const result: THREE.Mesh[] = [];
+  const normals = piSystemNormals(molecule, systems, positions);
   systems.forEach((system, systemIndex) => {
-    const normal = vectorOf(piSystemNormal(molecule, system.atoms, positions, systemIndex));
+    const normal = vectorOf(normals[systemIndex]!);
     const base = new THREE.Color(PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!);
     for (const phase of [-1, 1] as const) {
       const color = base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex();
