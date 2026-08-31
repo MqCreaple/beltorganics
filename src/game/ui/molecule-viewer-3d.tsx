@@ -7,6 +7,7 @@ import {
   PI_SURFACE_SUBTRACT,
   metaballSupportRadius,
   piLobeOffset,
+  piSurfaceResolution,
 } from './pi-surface-math';
 import {
   ELEMENTS,
@@ -427,7 +428,7 @@ function addPiElectronClouds(group: THREE.Group, molecule: Molecule, positions: 
     if (system.atoms.length < 2) return;
     const normal = vectorOf(normals[systemIndex]!);
     const color = PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!;
-    for (const phase of [-1, 1] as const) addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.2, 0.72, 3);
+    addMergedPiSurfaces(group, system.atoms, positions, normal, [color, color], 0.2, 0.72, 3);
   });
 }
 
@@ -442,9 +443,11 @@ function addPiOrbitals(
   systems.forEach((system, systemIndex) => {
     const normal = vectorOf(normals[systemIndex]!);
     const base = new THREE.Color(PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!);
-    for (const phase of [-1, 1] as const) {
-      const color = base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex();
-      const surface = addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.5, 0.58, 4);
+    const colors = ([-1, 1] as const).map((phase) => (
+      base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex()
+    )) as [number, number];
+    const surfaces = addMergedPiSurfaces(group, system.atoms, positions, normal, colors, 0.5, 0.58, 4);
+    for (const surface of surfaces) {
       surface.userData.piOrbital = {
         id: `π${systemIndex + 1}`,
         atomCount: system.atoms.length,
@@ -456,21 +459,28 @@ function addPiOrbitals(
   return result;
 }
 
-/** One smooth marching-cubes entity for one side of a complete π system. */
-function addMergedPiSurface(
+/**
+ * Build one smooth lobe with marching cubes, then mirror its geometry for the
+ * opposite side of the system plane. This halves the expensive field work.
+ */
+function addMergedPiSurfaces(
   group: THREE.Group,
   atoms: readonly AtomId[],
   positions: ReadonlyMap<AtomId, Point3D>,
   normal: THREE.Vector3,
-  phase: -1 | 1,
-  color: number,
+  colors: readonly [negative: number, positive: number],
   opacity: number,
   radius: number,
   renderOrder: number,
-): THREE.Mesh {
+): [negative: THREE.Mesh, positive: THREE.Mesh] {
   // Offset each lobe by its isolated isosurface radius so opposite phases
   // barely meet at the molecular plane instead of overlapping visibly.
-  const centers = atoms.map((atom) => vectorOf(positions.get(atom)!).addScaledVector(normal, phase * piLobeOffset(radius)));
+  const atomCenters = atoms.map((atom) => vectorOf(positions.get(atom)!));
+  const systemCenter = atomCenters.reduce(
+    (sum, point) => sum.add(point),
+    new THREE.Vector3(),
+  ).multiplyScalar(1 / atomCenters.length);
+  const centers = atomCenters.map((point) => point.clone().addScaledVector(normal, piLobeOffset(radius)));
   const isolation = PI_SURFACE_ISOLATION;
   const subtract = PI_SURFACE_SUBTRACT;
   // A Three.js metaball's positive field extends beyond its requested
@@ -480,15 +490,8 @@ function addMergedPiSurface(
   const bounds = new THREE.Box3().setFromPoints(centers).expandByScalar(supportRadius * 1.05);
   const center = bounds.getCenter(new THREE.Vector3());
   const extent = Math.max(1.8, bounds.getSize(new THREE.Vector3()).x, bounds.getSize(new THREE.Vector3()).y, bounds.getSize(new THREE.Vector3()).z);
-  const material = new THREE.MeshPhongMaterial({
-    color,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-    shininess: 65,
-    side: THREE.DoubleSide,
-  });
-  const surface = new MarchingCubes(28, material, false, false, 30_000);
+  const positiveMaterial = piSurfaceMaterial(colors[1], opacity);
+  const surface = new MarchingCubes(piSurfaceResolution(extent), positiveMaterial, false, false, 30_000);
   surface.isolation = isolation;
   surface.position.copy(center);
   surface.scale.setScalar(extent / 2);
@@ -504,8 +507,76 @@ function addMergedPiSurface(
   }
   surface.update();
   surface.renderOrder = renderOrder;
+
+  // The field geometry is local to the scaled MarchingCubes mesh. Reflect a
+  // compact copy across the molecular plane and reverse triangle winding so
+  // both lobes retain outward-facing normals without another field traversal.
+  const localPlanePoint = systemCenter.clone().sub(center).multiplyScalar(2 / extent);
+  const negativeGeometry = mirroredGeometry(surface.geometry, localPlanePoint, normal);
+  const negative = new THREE.Mesh(negativeGeometry, piSurfaceMaterial(colors[0], opacity));
+  negative.position.copy(center);
+  negative.scale.setScalar(extent / 2);
+  negative.renderOrder = renderOrder;
+  group.add(negative);
   group.add(surface);
-  return surface;
+  return [negative, surface];
+}
+
+function piSurfaceMaterial(color: number, opacity: number): THREE.MeshPhongMaterial {
+  return new THREE.MeshPhongMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    shininess: 65,
+    side: THREE.DoubleSide,
+  });
+}
+
+/** Copy and reflect only the vertices emitted by MarchingCubes. */
+function mirroredGeometry(
+  source: THREE.BufferGeometry,
+  planePoint: THREE.Vector3,
+  planeNormal: THREE.Vector3,
+): THREE.BufferGeometry {
+  const sourcePositions = source.getAttribute('position');
+  const sourceNormals = source.getAttribute('normal');
+  const count = source.drawRange.count;
+  const positions = new Float32Array(count * 3);
+  const normals = new Float32Array(count * 3);
+  const point = new THREE.Vector3();
+  const vertexNormal = new THREE.Vector3();
+
+  for (let triangle = 0; triangle < count; triangle += 3) {
+    for (let corner = 0; corner < 3; corner += 1) {
+      // Reflection reverses handedness; swap the final two vertices to keep
+      // the copied triangle front-facing.
+      const sourceIndex = triangle + (corner === 1 ? 2 : corner === 2 ? 1 : 0);
+      point.fromBufferAttribute(sourcePositions, sourceIndex);
+      const planeDistance = (point.x - planePoint.x) * planeNormal.x
+        + (point.y - planePoint.y) * planeNormal.y
+        + (point.z - planePoint.z) * planeNormal.z;
+      point.addScaledVector(planeNormal, -2 * planeDistance);
+      vertexNormal.fromBufferAttribute(sourceNormals, sourceIndex);
+      vertexNormal.addScaledVector(planeNormal, -2 * vertexNormal.dot(planeNormal));
+      const targetIndex = triangle + corner;
+      const offset = targetIndex * 3;
+      positions[offset] = point.x;
+      positions[offset + 1] = point.y;
+      positions[offset + 2] = point.z;
+      normals[offset] = vertexNormal.x;
+      normals[offset + 1] = vertexNormal.y;
+      normals[offset + 2] = vertexNormal.z;
+    }
+  }
+
+  const result = new THREE.BufferGeometry();
+  result.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  result.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  result.setDrawRange(0, count);
+  result.computeBoundingBox();
+  result.computeBoundingSphere();
+  return result;
 }
 
 function atomColor(molecule: Molecule, atom: AtomId, layer: MoleculeViewerLayer, charge: number): number {

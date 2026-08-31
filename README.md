@@ -47,7 +47,7 @@ showing the substance name, formula and SMILES above a draggable, zoomable 3D
 molecule. The viewer switches between ball-and-stick and overlapping van der Waals space-filling models;
 Structure, Hybridization, Charge, Electron cloud and merged, color-grouped pi-orbital overlays color
 or shape the model itself without numbered atom references. Generated coordinates are registry-cached,
-and hovering a pi surface shows its orbital ID, atom count and electron count beside the pointer.
+and hovering a pi surface shows its orbital ID, atom count and electron count beside the pointer. Merged surfaces use a fixed physical marching-cubes grid spacing, while the opposite lobe reuses a mirrored copy of the generated geometry.
 Player-facing docs: `docs/game-world.md`.
 
 ## Quickstart
