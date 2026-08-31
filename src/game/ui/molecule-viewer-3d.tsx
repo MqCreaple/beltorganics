@@ -78,14 +78,14 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
 
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.setClearColor(0x111722, 1);
+    renderer.setClearColor(0xf4f7fb, 1);
     renderer.domElement.className = 'molecule-viewer-canvas';
     renderer.domElement.setAttribute('aria-label', 'Interactive three-dimensional molecule');
     renderer.domElement.setAttribute('role', 'img');
     host.append(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x111722, 0.025);
+    scene.fog = new THREE.FogExp2(0xf4f7fb, 0.018);
     const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 500);
     const boundsRadius = Math.max(
       1.5,
@@ -100,11 +100,11 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
     controls.maxDistance = Math.max(14, boundsRadius * 8);
     controls.saveState();
 
-    scene.add(new THREE.HemisphereLight(0xdbe9ff, 0x273247, 2.1));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 3.4);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xb8c4d6, 2.35));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 3.1);
     keyLight.position.set(5, 7, 8);
     scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight(0x77a9ff, 2.1);
+    const rimLight = new THREE.DirectionalLight(0x9dbce8, 1.35);
     rimLight.position.set(-6, -2, -5);
     scene.add(rimLight);
     const moleculeGroup = new THREE.Group();
@@ -254,10 +254,10 @@ function LayerLegend({ layer, hasOrbitals }: { layer: MoleculeViewerLayer; hasOr
     return <span className="viewer-legend geometry-legend"><b className="sp" />sp <b className="sp2" />sp² <b className="sp3" />sp³</span>;
   }
   if (layer === 'density') {
-    return <span className="viewer-legend">Translucent shells show qualitative electron extent</span>;
+    return <span className="viewer-legend">Clouds show bonds, lone pairs and delocalized π electrons</span>;
   }
   if (layer === 'orbitals') {
-    return <span className="viewer-legend">{hasOrbitals ? 'Blue/orange = opposite π-orbital phase' : 'No π system in this molecule'}</span>;
+    return <span className="viewer-legend">{hasOrbitals ? 'One hue per π system · light/dark = opposite phase' : 'No π system in this molecule'}</span>;
   }
   return <span className="viewer-legend">C dark · H white · O red · N blue</span>;
 }
@@ -296,6 +296,8 @@ function populateMolecule(
     }
   }
 
+  if (layer === 'density') addBondClouds(group, molecule, positions);
+
   for (const atom of molecule.atoms()) {
     const view = molecule.getAtom(atom);
     const point = vectorOf(positions.get(atom)!);
@@ -318,27 +320,81 @@ function populateMolecule(
     group.add(mesh);
     atomMeshes.push(mesh);
 
-    if (layer === 'density') {
-      const shell = new THREE.Mesh(
-        new THREE.SphereGeometry(SPACE_RADIUS[view.element] * 1.16, 28, 18),
-        new THREE.MeshPhysicalMaterial({
-          color: chargeColor(charge),
-          transparent: true,
-          opacity: 0.19 + Math.min(0.13, Math.abs(charge) * 0.18),
-          depthWrite: false,
-          roughness: 0.15,
-          transmission: 0.08,
-          side: THREE.DoubleSide,
-        }),
-      );
-      shell.position.copy(point);
-      shell.renderOrder = 3;
-      group.add(shell);
-    }
+    if (layer === 'density') addLonePairs(group, molecule, atom, positions);
   }
 
+  if (layer === 'density') addPiElectronClouds(group, positions, piSystems);
   if (layer === 'orbitals') addPiOrbitals(group, molecule, positions, piSystems);
   return atomMeshes;
+}
+
+const PI_SYSTEM_COLORS = [0x3978c5, 0xa34a9d, 0x24866d, 0xc66b24, 0x7053bd, 0x147f9c] as const;
+
+function addBondClouds(group: THREE.Group, molecule: Molecule, positions: ReadonlyMap<AtomId, Point3D>): void {
+  for (const id of molecule.bonds()) {
+    const { source, target, order } = molecule.getBond(id);
+    const cloud = cylinderBetween(vectorOf(positions.get(source)!), vectorOf(positions.get(target)!), 0.13 + order * 0.025, 0x7e9bc2);
+    (cloud.material as THREE.MeshStandardMaterial).dispose();
+    cloud.material = new THREE.MeshPhongMaterial({ color: 0x7e9bc2, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide });
+    cloud.renderOrder = 1;
+    group.add(cloud);
+  }
+}
+
+function lonePairCount(molecule: Molecule, atom: AtomId): number {
+  const { element, formalCharge } = molecule.getAtom(atom);
+  const neutral = ELEMENTS[element].lonePairs;
+  return Math.max(0, neutral - formalCharge);
+}
+
+function addLonePairs(group: THREE.Group, molecule: Molecule, atom: AtomId, positions: ReadonlyMap<AtomId, Point3D>): void {
+  const count = lonePairCount(molecule, atom);
+  if (count === 0) return;
+  const center = vectorOf(positions.get(atom)!);
+  const neighbors = molecule.neighbors(atom).map((neighbor) => vectorOf(positions.get(neighbor)!).sub(center).normalize());
+  let away = new THREE.Vector3();
+  for (const neighbor of neighbors) away.sub(neighbor);
+  if (away.lengthSq() < 1e-5) away.set(0, 1, 0);
+  away.normalize();
+  const side = away.clone().cross(Math.abs(away.z) < 0.8 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0)).normalize();
+  for (let pair = 0; pair < count; pair += 1) {
+    const spread = count === 1 ? 0 : (pair - (count - 1) / 2) * 0.7;
+    const direction = away.clone().multiplyScalar(Math.cos(spread)).addScaledVector(side, Math.sin(spread)).normalize();
+    const lobe = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 18, 12),
+      new THREE.MeshPhongMaterial({ color: 0xe2b53f, transparent: true, opacity: 0.32, depthWrite: false }),
+    );
+    lobe.scale.set(0.7, 1.35, 0.7);
+    lobe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+    lobe.position.copy(center).addScaledVector(direction, 0.52);
+    lobe.renderOrder = 4;
+    group.add(lobe);
+    for (const offset of [-1, 1]) {
+      const electron = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), new THREE.MeshBasicMaterial({ color: 0x654600 }));
+      electron.position.copy(center).addScaledVector(direction, 0.66).addScaledVector(side, offset * 0.055);
+      electron.renderOrder = 5;
+      group.add(electron);
+    }
+  }
+}
+
+function addPiElectronClouds(group: THREE.Group, positions: ReadonlyMap<AtomId, Point3D>, systems: ReturnType<typeof conjugatedPiSystems>): void {
+  systems.forEach((system, systemIndex) => {
+    if (system.atoms.length < 2) return;
+    const normal = systemNormal(system.atoms, positions, systemIndex);
+    const color = PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!;
+    for (const atom of system.atoms) for (const phase of [-1, 1] as const) {
+      const cloud = new THREE.Mesh(
+        new THREE.SphereGeometry(0.44, 18, 12),
+        new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      cloud.scale.set(1, 0.68, 1);
+      cloud.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+      cloud.position.copy(vectorOf(positions.get(atom)!)).addScaledVector(normal, phase * 0.34);
+      cloud.renderOrder = 3;
+      group.add(cloud);
+    }
+  });
 }
 
 function addPiOrbitals(
@@ -347,19 +403,18 @@ function addPiOrbitals(
   positions: ReadonlyMap<AtomId, Point3D>,
   systems: ReturnType<typeof conjugatedPiSystems>,
 ): void {
-  const drawn = new Set<AtomId>();
-  for (const system of systems) {
+  systems.forEach((system, systemIndex) => {
+    const normal = systemNormal(system.atoms, positions, systemIndex);
+    const base = new THREE.Color(PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!);
     for (const atom of system.atoms) {
-      if (drawn.has(atom)) continue;
-      drawn.add(atom);
       const center = vectorOf(positions.get(atom)!);
-      const normal = orbitalNormal(molecule, atom, positions);
       const size = molecule.getAtom(atom).element === 'H' ? 0.28 : 0.42;
       for (const phase of [-1, 1] as const) {
+        const color = base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18);
         const lobe = new THREE.Mesh(
           new THREE.SphereGeometry(size, 22, 14),
           new THREE.MeshPhongMaterial({
-            color: phase < 0 ? 0x4f8fe8 : 0xf29b55,
+            color,
             transparent: true,
             opacity: 0.52,
             depthWrite: false,
@@ -374,23 +429,33 @@ function addPiOrbitals(
         group.add(lobe);
       }
     }
-  }
+  });
 }
 
-function orbitalNormal(
-  molecule: Molecule,
-  atom: AtomId,
+function systemNormal(
+  atoms: readonly AtomId[],
   positions: ReadonlyMap<AtomId, Point3D>,
+  systemIndex: number,
 ): THREE.Vector3 {
-  const center = vectorOf(positions.get(atom)!);
-  const vectors = molecule.neighbors(atom).map((neighbor) => vectorOf(positions.get(neighbor)!).sub(center));
-  if (vectors.length >= 2) {
-    const normal = new THREE.Vector3().crossVectors(vectors[0]!, vectors[1]!);
-    if (normal.lengthSq() > 1e-6) return normal.normalize();
+  for (let first = 0; first < atoms.length - 2; first += 1) {
+    const origin = vectorOf(positions.get(atoms[first]!)!);
+    for (let second = first + 1; second < atoms.length - 1; second += 1) {
+      const a = vectorOf(positions.get(atoms[second]!)!).sub(origin);
+      for (let third = second + 1; third < atoms.length; third += 1) {
+        const normal = new THREE.Vector3().crossVectors(a, vectorOf(positions.get(atoms[third]!)!).sub(origin));
+        if (normal.lengthSq() > 1e-6) {
+          normal.normalize();
+          if (normal.z < 0 || (Math.abs(normal.z) < 1e-6 && normal.y < 0)) normal.negate();
+          return normal;
+        }
+      }
+    }
   }
-  const direction = vectors[0]?.normalize() ?? new THREE.Vector3(1, 0, 0);
-  const reference = Math.abs(direction.z) < 0.8 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-  return new THREE.Vector3().crossVectors(direction, reference).normalize();
+  const direction = atoms.length > 1 ? vectorOf(positions.get(atoms[1]!)!).sub(vectorOf(positions.get(atoms[0]!)!)).normalize() : new THREE.Vector3(1, 0, 0);
+  const firstNormal = new THREE.Vector3()
+    .crossVectors(direction, Math.abs(direction.z) < 0.8 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0))
+    .normalize();
+  return systemIndex % 2 === 0 ? firstNormal : new THREE.Vector3().crossVectors(direction, firstNormal).normalize();
 }
 
 function atomColor(molecule: Molecule, atom: AtomId, layer: MoleculeViewerLayer, charge: number): number {
@@ -427,7 +492,8 @@ function atomDescription(
   }
   if (layer === 'geometry') return `${name} · ${hybridizationOf(molecule, atom) ?? '1s'} geometry`;
   if (layer === 'orbitals') {
-    return `${name} · ${systems.some((system) => system.atoms.includes(atom)) ? 'π-orbital participant' : 'no π orbital'}`;
+    const index = systems.findIndex((system) => system.atoms.includes(atom));
+    return `${name} · ${index >= 0 ? `π system ${index + 1} · ${systems[index]!.electronCount} electrons` : 'no π orbital'}`;
   }
   return name;
 }

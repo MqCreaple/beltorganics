@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateMoleculeGeometry, idealBondLength, parseSmiles } from '../src/chem';
+import { generateMoleculeGeometry, geometryIssues, idealBondLength, parseSmiles } from '../src/chem';
+import { DEMO_SOURCES } from '../src/demo-sources';
 import type { AtomId, Molecule, Point3D } from '../src/chem';
 
 function subtract(a: Point3D, b: Point3D): Point3D {
@@ -131,5 +132,11 @@ describe('topology-derived 3D molecular geometry', () => {
     const first = generateMoleculeGeometry(molecule);
     const second = generateMoleculeGeometry(molecule);
     expect([...second.positions]).toEqual([...first.positions]);
+  });
+
+  it.each(DEMO_SOURCES.map(([, , smiles]) => [smiles]))('satisfies the geometry rules for demo molecule %s', (smiles) => {
+    const molecule = parseSmiles(smiles);
+    const issues = geometryIssues(molecule, generateMoleculeGeometry(molecule));
+    expect(issues, JSON.stringify(issues.slice(0, 12), null, 2)).toEqual([]);
   });
 });

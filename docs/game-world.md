@@ -148,7 +148,7 @@ npm run build # typecheck + production build into dist/
   **Phaser 4** (installed 2026-08-28). Chemical-source panels embed a Three.js
   molecule viewer with drag/zoom controls, ball-and-stick and space-filling
   representations, plus Structure, Hybridization, Charge, qualitative Electron
-  cloud and pi-orbital overlays. The cached RDKit SVG remains the lightweight
+  cloud (bonds, lone pairs and conjugated π clouds) and color-grouped pi-orbital overlays in a light-themed scene. The cached RDKit SVG remains the lightweight
   representation for future molecule icons.
 - Block UI panels are built with **Preact** (JSX/TSX via @preact/preset-vite)
   so components stay modular and reusable; the world engine only carries a

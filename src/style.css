@@ -124,8 +124,8 @@ body {
   overflow: hidden;
   border: 1px solid #cbd3df;
   border-radius: 12px;
-  background: #111722;
-  box-shadow: 0 8px 24px rgba(17, 23, 34, 0.16);
+  background: #f4f7fb;
+  box-shadow: 0 8px 24px rgba(55, 68, 88, 0.14);
 }
 .molecule-viewer-toolbar {
   display: flex;
@@ -133,8 +133,8 @@ body {
   justify-content: space-between;
   gap: 0.6rem 1rem;
   padding: 0.55rem;
-  border-bottom: 1px solid #2b3546;
-  background: #18202d;
+  border-bottom: 1px solid #d7deea;
+  background: #ffffff;
 }
 .molecule-viewer-modes,
 .molecule-viewer-representation {
@@ -148,26 +148,26 @@ body {
   border-radius: 6px;
   padding: 0.36rem 0.58rem;
   background: transparent;
-  color: #aeb9ca;
+  color: #566173;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 .molecule-viewer-toolbar button:hover,
 .molecule-viewer-reset:hover {
-  color: #ffffff;
-  background: #263247;
+  color: #172033;
+  background: #e9eef6;
 }
 .molecule-viewer-toolbar button[aria-pressed='true'] {
-  border-color: #496991;
-  background: #2b4160;
-  color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(126, 171, 229, 0.12);
+  border-color: #7e9cc4;
+  background: #dfeafb;
+  color: #173b69;
+  box-shadow: inset 0 0 0 1px rgba(73, 105, 145, 0.08);
 }
 .molecule-viewer-representation {
   flex: 0 0 auto;
   padding-left: 0.6rem;
-  border-left: 1px solid #334055;
+  border-left: 1px solid #d7deea;
 }
 .molecule-viewer-stage {
   position: relative;
@@ -193,8 +193,9 @@ body {
   top: 0.65rem;
   right: 0.65rem;
   z-index: 1;
-  border-color: rgba(174, 185, 202, 0.3);
-  background: rgba(17, 23, 34, 0.72);
+  border-color: rgba(104, 120, 144, 0.35);
+  background: rgba(255, 255, 255, 0.82);
+  color: #4a5668;
   backdrop-filter: blur(6px);
 }
 .molecule-viewer-error {
@@ -205,8 +206,8 @@ body {
   justify-content: space-between;
   margin: 0;
   padding: 2rem;
-  color: #f0b4b8;
-  background: #111722;
+  color: #a22f3a;
+  background: #f4f7fb;
 }
 .molecule-viewer-caption {
   display: flex;
@@ -215,9 +216,9 @@ body {
   gap: 0.75rem;
   min-height: 38px;
   padding: 0.55rem 0.7rem;
-  border-top: 1px solid #2b3546;
-  background: #18202d;
-  color: #c1cad7;
+  border-top: 1px solid #d7deea;
+  background: #ffffff;
+  color: #455064;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -226,7 +227,7 @@ body {
   align-items: center;
   flex: 0 0 auto;
   gap: 0.3rem;
-  color: #8f9bad;
+  color: #67748a;
 }
 .charge-gradient i {
   width: 70px;

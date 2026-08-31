@@ -45,7 +45,7 @@ chunks (`src/world/`); chemical source blocks hold a substance's SMILES, are
 clickable, and open a centered panel (built with Preact/TSX in `src/game/ui/`)
 showing the substance name, formula and SMILES above a draggable, zoomable 3D
 molecule. The viewer switches between ball-and-stick and space-filling models;
-Structure, Hybridization, Charge, Electron cloud and pi-orbital overlays color
+Structure, Hybridization, Charge, Electron cloud and color-grouped pi-orbital overlays color
 or shape the model itself without numbered atom references.
 Player-facing docs: `docs/game-world.md`.
 
