@@ -20,6 +20,10 @@ A molecule is a *graph*: atoms are vertices (element, formal charge), bonds are 
 
 - **Formal charges & octet rule (Lewis structures)** http://www.chem.umd.edu/courses/chem233/Handouts&Topics/edot.pdf Counting valence electrons, satisfying octets, assigning formal charge (FC = valence − lone-pair electrons − bonds/2). Useful to validate that generated molecules are "legal" under the game's electron rules.
 
+### Expanded element catalog (implemented 2026-08-31)
+
+`src/chem/elements.ts` is the single source of truth for H/Li/B/C/N/O/F/Mg/P/S/Cl/Br/I: invented name and root, atomic number, period, default and allowed valence, valence-electron count, electron configuration, lone pairs, greediness, covalent and van der Waals radii, display color, PEOE fits and Hückel on-site shift. Geometry, charge, SMILES import and visualization consume this catalog instead of maintaining element switches. RDKit's documented allowed-valence table is the compatibility baseline: https://github.com/rdkit/rdkit/blob/master/Docs/Book/RDKit_Book.rst. PEOE fits come from RDKit's primary parameter source: https://github.com/rdkit/rdkit/blob/master/Code/GraphMol/PartialCharges/GasteigerParams.cpp. Covalent radii are conventional single-bond estimates and main-group van der Waals radii follow Mantina et al., https://doi.org/10.1021/jp8111556. Period-three expanded valences and Li/Mg geometry remain intentionally simple pseudo-chemistry rules, as requested; they are lower-confidence than the B/halogen behavior.
+
 
 ## 2. Bond energies
 
@@ -76,7 +80,7 @@ Plain molecular graphs are *isomorphic* for stereoisomers: (R)- and (S)-lactic a
 
 - **Computing stereo from 3D coordinates** https://docs.rs/sdfrust/latest/src/sdfrust/descriptors/chirality.rs.html Tetrahedral chirality = sign of the signed volume (triple product a·(b×c) of the three substituent vectors relative to the fourth), with a near-zero threshold for flat/unspecified; CIP priority via layered BFS with "phantom atoms" for multiple bonds. For E/Z: https://docs.rs/molcrafts-molrs-core/latest/molrs_core/stereo/fn.assign_bond_stereo_from_3d.html the dihedral between the two highest-priority substituents decides: < 90° = Z (same side), > 90° = E (opposite sides). In 2D, wedge/dash bonds supply the ±z offsets for the same tests.
 
-- **CIP sequence rules (R/S, E/Z)** https://iupac.qmul.ac.uk/BlueBook/P92.html Priority by atomic number, then by BFS-expanded spheres of sorted atomic numbers; multiple bonds contribute phantom duplicates of their far atom. Simplified layered implementations (e.g. sdfrust above) are enough for a game with four elements.
+- **CIP sequence rules (R/S, E/Z)** https://iupac.qmul.ac.uk/BlueBook/P92.html Priority by atomic number, then by BFS-expanded spheres of sorted atomic numbers; multiple bonds contribute phantom duplicates of their far atom. Simplified layered implementations (e.g. sdfrust above) are enough for the game's bounded element catalog.
 
 - **Stereo-aware graph libraries (exact equality, hashing)** https://github.com/maxim-papusha/StereoMolGraph StereoMolGraph (Papusha & Leonhard, J. Chem. Inf. Model. 66, 3830, 2026): graphs whose only concern is connectivity + relative stereochemistry; circular-stereo hash (WL color refinement extended with chirality) for fast approximate equality, VF2++-style isomorphism with stereo for exact checks. A reference if the game later needs robust stereo isomorphism; the parity approach above is sufficient for naming and properties.
 
@@ -90,11 +94,11 @@ Notes distilled from the references in sections 3-4 for direct porting to JS.
 ### PEOE (Gasteiger-Marsili) partial charges
 
 - Electronegativity as a function of charge: χ(q) = a + b·q + c·q².
-- Parameters per element *and* hybridization (sp3/sp2/sp): H (7.17, 6.24, -0.56); C sp3 (7.98, 9.18, 1.88), C sp2 (8.79, 9.32, 1.51), C sp (10.39, 9.45, 0.73); N sp3 (11.54, 10.82, 1.36), N sp2 (12.87, 11.15, 0.85), N sp (15.68, 11.70, -0.27); O sp3 (14.18, 12.92, 1.39), O sp2 (17.07, 13.79, 0.47). The current labeler makes multiply bonded O sp2; its defensive sp slot uses the same O sp2 fit. The ordering O > N > C > H matches the game's "greediness" ladder (Obligium > Naturium > Cardinium ≈ Habitium).
+- Parameters live on each `ElementInfo`, including hybridization fits for C/N/O/B/Mg/P/S and fits for F/Cl/Br/I. The expanded values follow RDKit's Gasteiger parameter source (`Code/GraphMol/PartialCharges/GasteigerParams.cpp`); Li uses a deliberately generic low-greediness fallback until calibrated. Keeping the table with the radii, valences, electron configuration and visualization color prevents element behavior from drifting across subsystems.
 - Hybridization from the graph: 4 singles = sp3; one double + singles = sp2; triple or two doubles = sp; aromatic = sp2.
 - Initialise q from formal charges; iterate ~6-8 times with damping 0.5: at iteration k, damp = 0.5^(k+1); per bond (i,j), transfer = damp·(χ_j − χ_i)/χ⁺ where χ⁺ is the electronegativity of the electron-poor end at q = +1; add to one atom and subtract from the other (exact charge conservation). Cost O(iterations·bonds), topology-only, qualitative trends (electronegative atoms negative, H positive, inductive decay with distance).
 
-Implemented in `src/chem/partial-charges.ts` (2026-08-29). The calculator uses eight passes by default and applies every pass simultaneously, so a bond's insertion/traversal order cannot feed a newly changed charge into another bond during that pass. Charge is initialized from formal charge. Transfers occur only across graph edges; a final floating-point correction is made per connected component, so salts retain the formal charge of each ion independently and exactly. The 3D inspector's Charge layer colors the atoms themselves on a blue-neutral-red scale; it does not expose graph ids or require a numbered atom list. Tests cover water polarity, carbonyl direction, inductive decay, carboxylate charge sharing, disconnected ions, traversal stability, and option validation.
+Implemented in `src/chem/partial-charges.ts` (2026-08-29; expanded 2026-08-31). The calculator uses eight passes by default and applies every pass simultaneously, so a bond's insertion/traversal order cannot feed a newly changed charge into another bond during that pass. Charge is initialized from formal charge. Transfers occur only across graph edges; a final floating-point correction is made per connected component, so salts retain the formal charge of each ion independently and exactly. The 3D inspector's Charge layer colors the atoms themselves on a blue-neutral-red scale. Tests cover water polarity, carbonyl direction, inductive decay, carboxylate charge sharing, disconnected ions, traversal stability, option validation and carbon-halogen polarity.
 
 ### Hückel MO (HMO) for HOMO/LUMO
 
@@ -102,6 +106,14 @@ Implemented in `src/chem/partial-charges.ts` (2026-08-29). The calculator uses e
 - Diagonalize (small symmetric matrix; Jacobi/QL in JS) → eigenvalues x_i → orbital energies E_i = α − x_i·β (β < 0). Fill 2 electrons per MO from the bottom: HOMO = highest occupied, LUMO = lowest unoccupied, gap = E_LUMO − E_HOMO. Only relative energies matter, so α = 0, β = 1 suffices.
 - Free outputs from eigenvectors: π electron density q_R = Σ b_i c_iR², π bond order p_RS = Σ b_i c_iR c_iS, and delocalization (resonance) energy = E_π(total) − E_π(localized reference) — benzene ≈ 2β. This makes conjugation/aromaticity *emerge* from the same engine.
 - Heteroatom parameter table + worked example (acrolein): http://www.pci.tu-bs.de/aggericke/PC4e/Kap_II/Hueckel_Acrolein.html (Derflinger & Lischka values). Reactivity: frontier-orbital matching (nucleophile HOMO ↔ electrophile LUMO) is exactly the game's "give/take" check; the gap size can bias stochastic side-reaction weights.
+
+Implemented in `src/chem/orbitals.ts` (2026-08-31). The game uses three intentionally distinct approximations:
+
+1. Every graph bond contributes a localized two-center σ bonding/antibonding pair. A 2x2 symmetric Hamiltonian uses element and PEOE-charge shifts, while a strong fixed coupling keeps σ below σ*.
+2. Each localized lone pair not donated into a conjugated system contributes one occupied nonbonding orbital.
+3. Every perceived conjugated π system contributes one basis function per participating atom. Its Hückel Hamiltonian uses `ElementInfo.huckelCoulomb` on the diagonal, a partial-charge shift, and unit coupling between bonded system atoms. The dependency-free Jacobi solver in `src/math/symmetric-eigen.ts` returns sorted energies and normalized signed eigenvectors; electrons fill from the bottom, two per mode.
+
+`molecularOrbitals` combines and sorts the modes and returns occupied/unoccupied lists, HOMO, LUMO and gap. These are relative game energies, not ab-initio electron-volts. The signed coefficient map is the important shape output: regression tests recover ethene and benzene mode spacing, the shrinking π gap from ethene to butadiene, and a carbonyl π* coefficient whose magnitude is larger on Cardinium than Obligium. The viewer selects individual computed π modes and scales/flips its merged lobes from those coefficients, so nodes, localization, phase, occupancy and relative energy are now visible. Calibration of σ/lone-pair level offsets remains a balancing task; reaction code should consume the relative frontier ordering, not treat the values as experimental observables.
 
 ### Conjugation & aromaticity perception
 
@@ -177,7 +189,7 @@ The chemistry basis is that resonance forms are contributors to one wavefunction
 
 Localized lone pairs use VSEPR directions in the viewer: water's two bonds and two lone pairs occupy four approximately tetrahedral domains; sp2 atoms keep their localized domains in the molecular plane. A lone pair that is the p-orbital contribution of an sp2 donor with no multiple bond of its own (amide N, pyrrole-like N, etc.) is counted in the conjugated π surface and omitted from the localized-lone-pair display. A double-bonded atom such as formaldehyde O keeps its localized lone pairs because its p orbital is already represented by the explicit π bond.
 
-Space-filling atoms use the Bondi/Rowland-Taylor van der Waals radii H 1.10 Å, C 1.70 Å, N 1.55 Å and O 1.52 Å, so bonded spheres intentionally overlap. Sources: Bondi, *J. Phys. Chem.* 68 (1964) 441-451, https://doi.org/10.1021/j100785a001; Mantina et al., *J. Phys. Chem. A* 113 (2009) 5806-5812, https://doi.org/10.1021/jp8111556.
+Space-filling atoms use the `ElementInfo.vanDerWaalsRadius` catalog, so bonded spheres intentionally overlap. H/C/N/O retain the Bondi/Rowland-Taylor values; the expanded main-group catalog uses Mantina et al. where available. Sources: Bondi, *J. Phys. Chem.* 68 (1964) 441-451, https://doi.org/10.1021/j100785a001; Mantina et al., *J. Phys. Chem. A* 113 (2009) 5806-5812, https://doi.org/10.1021/jp8111556.
 
 
 ## 9. Player-facing naming convention (decided)

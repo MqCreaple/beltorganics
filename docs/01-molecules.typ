@@ -8,7 +8,7 @@
   title: [Molecules: atoms, bonds, and shapes],
   author: "BeltOrganics",
   date: none,
-  abstract: [The player guide to molecules: what a molecule is, the four atoms, bonds and bond polarity, lone pairs, shape and stereochemistry, identity and naming, and a first look at functional groups.],
+  abstract: [The player guide to molecules: what a molecule is, the game's atoms, bonds and bond polarity, lone pairs, shape and stereochemistry, identity and naming, and a first look at functional groups.],
   figure-index: (enabled: true),
   table-index: (enabled: true),
 )
@@ -62,27 +62,37 @@ The game stores every molecule as a *molecular graph*: a set of dots (the atoms)
   [Ethanol drawn two different ways. The game's fingerprint knows these are the same molecule — only the connections matter.],
 )
 
-== The four atoms <sec:the-four-atoms>
+== The atoms <sec:the-atoms>
 
-The whole game is built from just four kinds of atoms, each with an invented name: Cardinium (C), Habitium (H), Obligium (O) and Naturium (N). The letters in parentheses are the shorthand used in formulas and canonical names, so water is written #ch("H2O") and ethanol is `CCO`.
+The game begins with four common atoms — Cardinium (C), Habitium (H), Obligium (O) and Naturium (N) — and adds nine specialist atoms as the factory grows. The letters in parentheses are the shorthand used in formulas and canonical names, so water is written #ch("H2O"), ethanol is `CCO`, and chloromethane is `CCl`.
 
+#pagebreak(weak: true)
 #figure(
   table(
     columns: (auto, auto, auto, 1fr),
     align: (left, center, center, left),
-    [*Atom*], [*Hands (bonds)*], [*Lone pairs*], [*Personality*],
+    [*Atom*], [*Usual hands*], [*Lone pairs*], [*Personality*],
     [Cardinium (#ch("C"))], [4], [0], [The connector: builds chains and rings.],
     [Habitium (#ch("H"))], [1], [0], [The tiny filler: caps unused hands, usually hidden in drawings.],
     [Obligium (#ch("O"))], [2], [2], [The greedy one: pulls shared electrons toward itself.],
     [Naturium (#ch("N"))], [3], [1], [The moderate one: carries a spare electron pair.],
+    [Brevium (#ch("B"))], [3], [0], [The incomplete one: keeps an empty orbital ready to accept electrons.],
+    [Faminum (#ch("F"))], [1], [3], [The hungriest halogen: pulls electron density strongly.],
+    [Claspium (#ch("Cl"))], [1], [3], [A larger halogen that holds shared electrons tightly.],
+    [Branchium (#ch("Br"))], [1], [3], [A heavy, polarizable halogen branch.],
+    [Inductium (#ch("I"))], [1], [3], [The most polarizable halogen cloud.],
+    [Sociatium (#ch("S"))], [2], [2], [A flexible connector that can also use four or six hands.],
+    [Pivotium (#ch("P"))], [3], [1], [A branching center that can also use five hands.],
+    [Liberium (#ch("Li"))], [1], [0], [A metal that readily gives up its outside electron.],
+    [Mergium (#ch("Mg"))], [2], [0], [A two-handed metal used to join organic groups to reactive centers.],
   ),
-  caption: [The four atoms: hands (bonds), lone pairs, and personality.],
+  caption: [The game's atoms: their usual hands, lone pairs, and pseudo-chemical personality.],
 )
 
-- *Hands*: each atom can form at most this many bonds. A Cardinium atom with all four hands full is "satisfied"; one with a free hand is unhappy and reactive.
+- *Hands*: the number shown is the usual neutral bonding pattern. Cardinium follows four hands, while the larger Sociatium and Pivotium atoms can use expanded patterns. The game records those allowed patterns explicitly.
 - *Lone pairs*: electrons that belong to a single atom and are not shared in a bond. They make that atom electron-rich (more on this later).
 
-Colors are the usual ones: Cardinium black, Obligium red, Naturium blue, and Habitium white (it is usually left out of drawings).
+Colors follow a consistent element palette: Cardinium is dark, Obligium red, Naturium blue, Habitium white, and each specialist atom has its own color in the 3D viewer.
 
 *Naming compounds.* Simple inorganic compounds are named from the invented element names rather than the real ones. A two-element compound takes the name of the greedier element with an *-ide* ending, with a number prefix when there is more than one: #ch("CO2") is *cardinium diobligide*, #ch("CO") is *cardinium obligide*, #ch("NH3") is *trihabitium naturide*, and #ch("H2") is *dihabitium*. Acids add *-ic acid*: *cardinic acid* is carbonic acid. Water is formally *dihabitium obligide*, but everyone still calls it water. Organic compounds keep their familiar names — ethanol, benzene, acetone and the rest.
 
