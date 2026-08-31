@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  conjugatedPiSystems,
   displayedLonePairCount,
   generateMoleculeGeometry,
   geometryIssues,
@@ -7,6 +8,8 @@ import {
   idealBondLength,
   lonePairDirections,
   parseSmiles,
+  piSystemNormal,
+  resonanceAdjustedBondLengths,
 } from '../src/chem';
 import { DEMO_SOURCES } from '../src/demo-sources';
 import type { AtomId, Molecule, Point3D } from '../src/chem';
@@ -156,6 +159,38 @@ describe('topology-derived 3D molecular geometry', () => {
       const carbonNeighbors = molecule.neighbors(carbon).filter((atom) => molecule.getAtom(atom).element === 'C');
       expect(angleDegrees(positions.get(carbonNeighbors[0]!)!, positions.get(carbon)!, positions.get(carbonNeighbors[1]!)!)).toBeCloseTo(120, 0);
     }
+  });
+
+  it('recognizes the substituted benzene ring embedded in morphine', () => {
+    const molecule = parseSmiles('CN1CC[C@]23[C@@H]4[C@H]1CC5=C2C(=C(C=C5)O)O[C@H]3[C@H](C=C4)O');
+    const adjusted = resonanceAdjustedBondLengths(molecule);
+    const aromaticCarbonBonds = [...adjusted].filter(([bondId, target]) => {
+      const bond = molecule.getBond(bondId);
+      return molecule.getAtom(bond.source).element === 'C'
+        && molecule.getAtom(bond.target).element === 'C'
+        && Math.abs(target - (1.54 + 1.34) / 2) < 1e-9;
+    });
+    expect(aromaticCarbonBonds).toHaveLength(6);
+
+    const positions = generateMoleculeGeometry(molecule).positions;
+    const lengths = aromaticCarbonBonds.map(([bondId]) => {
+      const { source, target } = molecule.getBond(bondId);
+      return length(subtract(positions.get(source)!, positions.get(target)!));
+    });
+    expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThan(0.05);
+  });
+
+  it('orients cholesterol pi lobes perpendicular to the local alkene plane', () => {
+    const molecule = parseSmiles('C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O)C)C');
+    const geometry = generateMoleculeGeometry(molecule);
+    const system = conjugatedPiSystems(molecule).find((candidate) => candidate.atoms.length === 2)!;
+    const [first, second] = system.atoms;
+    const substituent = molecule.neighbors(first!).find((atom) => atom !== second)!;
+    const axis = subtract(geometry.positions.get(second!)!, geometry.positions.get(first!)!);
+    const side = subtract(geometry.positions.get(substituent)!, geometry.positions.get(first!)!);
+    const normal = piSystemNormal(molecule, system.atoms, geometry.positions);
+    expect(Math.abs(dot(normal, axis) / length(axis))).toBeLessThan(1e-6);
+    expect(Math.abs(dot(normal, side) / length(side))).toBeLessThan(1e-6);
   });
 
   it('keeps acetic acid C-O bonds distinct but equalizes acetate', () => {

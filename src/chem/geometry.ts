@@ -46,9 +46,9 @@ export function idealBondLength(first: ElementSymbol, second: ElementSymbol, ord
   return (COVALENT_RADIUS[first] + COVALENT_RADIUS[second]) * (order === 1 ? 1 : order === 2 ? 0.9 : 0.82);
 }
 
-function lengthOfBond(molecule: Molecule, a: AtomId, b: AtomId): number {
+function lengthOfBond(molecule: Molecule, a: AtomId, b: AtomId, adjusted: ReadonlyMap<BondId, number>): number {
   const bondId = molecule.bondBetween(a, b)!;
-  const resonanceLength = resonanceAdjustedBondLengths(molecule).get(bondId);
+  const resonanceLength = adjusted.get(bondId);
   if (resonanceLength !== undefined) return resonanceLength;
   const bond = molecule.getBond(bondId);
   return idealBondLength(molecule.getAtom(a).element, molecule.getAtom(b).element, bond.order);
@@ -58,9 +58,9 @@ function lengthOfBond(molecule: Molecule, a: AtomId, b: AtomId): number {
  * Effective lengths for bonds exchanged by equivalent resonance forms.
  *
  * Compact game rule:
- * 1. Alternating bonds in a uniform 4n+2 conjugated cycle are averaged. The
- *    atoms and their external environments must be equivalent, so benzene is
- *    regular without flattening every bond in asymmetric/fused systems.
+ * 1. Bonds in an alternating 4n+2 conjugated cycle are averaged by element
+ *    pair. External substituents do not cancel aromaticity, so a benzene ring
+ *    remains equalized inside substituted/fused structures such as morphine.
  * 2. Single/double bonds from one conjugated center to terminal substituents
  *    are averaged only when those substituents have the same element and the
  *    same hydrogen/heavy-neighbor environment. Thus acetate is symmetric,
@@ -72,14 +72,7 @@ export function resonanceAdjustedBondLengths(molecule: Molecule): Map<BondId, nu
 
   for (const system of systems) {
     const atoms = new Set(system.atoms);
-    if (isUniformAromaticCycle(molecule, system.atoms, system.electronCount)) {
-      const cycleBonds = molecule.bonds().filter((bondId) => {
-        const bond = molecule.getBond(bondId);
-        return bond.order <= 2
-          && atoms.has(bond.source)
-          && atoms.has(bond.target)
-          && hasAlternatePath(molecule, bond.source, bond.target, bondId, atoms);
-      });
+    for (const cycleBonds of alternatingAromaticCycles(molecule, atoms)) {
       for (const bondId of cycleBonds) {
         const bond = molecule.getBond(bondId);
         result.set(bondId, averageSingleDoubleLength(
@@ -121,52 +114,50 @@ export function resonanceAdjustedBondLengths(molecule: Molecule): Map<BondId, nu
   return result;
 }
 
-function isUniformAromaticCycle(
+/**
+ * Find bounded, alternating 4n+2 cycles inside a perceived conjugated system.
+ * Ring membership and alternating π bonds establish aromatic equalization;
+ * substituents outside the ring deliberately do not have to match. This keeps
+ * a benzene ring aromatic inside fused/substituted structures such as
+ * morphine, while avoiding an exponential all-cycle search on huge graphs.
+ */
+function alternatingAromaticCycles(
   molecule: Molecule,
-  atoms: readonly AtomId[],
-  electronCount: number,
-): boolean {
-  if (electronCount < 2 || (electronCount - 2) % 4 !== 0) return false;
-  const atomSet = new Set(atoms);
-  const signatures = atoms.map((atom) => {
-    const inside = molecule.neighbors(atom).filter((neighbor) => atomSet.has(neighbor));
-    const outside = molecule.neighbors(atom)
-      .filter((neighbor) => !atomSet.has(neighbor))
-      .map((neighbor) => `${molecule.getAtom(neighbor).element}:${molecule.getAtom(neighbor).formalCharge}`)
-      .sort()
-      .join(',');
-    const view = molecule.getAtom(atom);
-    return { inside: inside.length, signature: `${view.element}:${view.formalCharge}|${outside}` };
-  });
-  return signatures.every(({ inside }) => inside === 2)
-    && signatures.every(({ signature }) => signature === signatures[0]!.signature);
+  allowed: ReadonlySet<AtomId>,
+): BondId[][] {
+  const found = new Map<string, BondId[]>();
+  const maximumRingSize = 12;
+
+  const visit = (start: AtomId, current: AtomId, path: AtomId[], used: Set<AtomId>): void => {
+    if (path.length > maximumRingSize) return;
+    for (const neighbor of molecule.neighbors(current)) {
+      if (!allowed.has(neighbor)) continue;
+      const bondId = molecule.bondBetween(current, neighbor)!;
+      if (molecule.getBond(bondId).order > 2) continue;
+      if (neighbor === start) {
+        if (path.length < 4 || path.length % 2 !== 0) continue;
+        const bondIds = path.map((atom, index) => molecule.bondBetween(atom, path[(index + 1) % path.length]!)!);
+        const orders = bondIds.map((id) => molecule.getBond(id).order);
+        if (!orders.every((order, index) => order !== orders[(index + 1) % orders.length])) continue;
+        const electronCount = orders.filter((order) => order === 2).length * 2;
+        if ((electronCount - 2) % 4 !== 0) continue;
+        const key = [...bondIds].sort().join('|');
+        found.set(key, bondIds);
+        continue;
+      }
+      if (used.has(neighbor) || path.length === maximumRingSize) continue;
+      used.add(neighbor);
+      visit(start, neighbor, [...path, neighbor], used);
+      used.delete(neighbor);
+    }
+  };
+
+  for (const start of allowed) visit(start, start, [start], new Set([start]));
+  return [...found.values()];
 }
 
 function averageSingleDoubleLength(first: ElementSymbol, second: ElementSymbol): number {
   return (idealBondLength(first, second, 1) + idealBondLength(first, second, 2)) / 2;
-}
-
-function hasAlternatePath(
-  molecule: Molecule,
-  source: AtomId,
-  target: AtomId,
-  excludedBond: BondId,
-  allowed: ReadonlySet<AtomId>,
-): boolean {
-  const visited = new Set<AtomId>([source]);
-  const queue = [source];
-  for (let index = 0; index < queue.length; index += 1) {
-    const atom = queue[index]!;
-    for (const neighbor of molecule.neighbors(atom)) {
-      if (!allowed.has(neighbor) || molecule.bondBetween(atom, neighbor) === excludedBond) continue;
-      if (neighbor === target) return true;
-      if (!visited.has(neighbor)) {
-        visited.add(neighbor);
-        queue.push(neighbor);
-      }
-    }
-  }
-  return false;
 }
 
 /** VSEPR angle target, including lone-pair compression for water-like O and ammonia-like N. */
@@ -277,6 +268,53 @@ function perpendicular(axis: Point3D, salt = 0): Point3D {
   return unit(cross(axis, reference));
 }
 
+/**
+ * Unit normal of the molecular plane carrying one perceived π system.
+ *
+ * Extended systems obtain it from three non-collinear participating atoms.
+ * A lone C=C has only two participating atoms, so its attached substituent
+ * defines the local molecular plane; using a global-axis fallback here was
+ * the source of cholesterol's π lobes being rotated by 90 degrees.
+ */
+export function piSystemNormal(
+  molecule: Molecule,
+  atoms: readonly AtomId[],
+  positions: ReadonlyMap<AtomId, Point3D>,
+  systemIndex = 0,
+): Point3D {
+  for (let first = 0; first < atoms.length - 2; first += 1) {
+    const origin = positions.get(atoms[first]!)!;
+    for (let second = first + 1; second < atoms.length - 1; second += 1) {
+      const a = sub(positions.get(atoms[second]!)!, origin);
+      for (let third = second + 1; third < atoms.length; third += 1) {
+        const normal = cross(a, sub(positions.get(atoms[third]!)!, origin));
+        if (magnitude(normal) > 1e-6) return canonicalNormal(normal);
+      }
+    }
+  }
+
+  const first = atoms[0];
+  const second = atoms[1];
+  if (first === undefined || second === undefined) return { x: 0, y: 0, z: 1 };
+  const axis = unit(sub(positions.get(second)!, positions.get(first)!));
+  const participating = new Set(atoms);
+  for (const center of [first, second]) {
+    for (const neighbor of molecule.neighbors(center)) {
+      if (participating.has(neighbor)) continue;
+      const normal = cross(axis, sub(positions.get(neighbor)!, positions.get(center)!));
+      if (magnitude(normal) > 1e-6) return canonicalNormal(normal);
+    }
+  }
+
+  const firstNormal = perpendicular(axis, 0);
+  return systemIndex % 2 === 0 ? canonicalNormal(firstNormal) : canonicalNormal(cross(axis, firstNormal));
+}
+
+function canonicalNormal(normal: Point3D): Point3D {
+  const result = unit(normal);
+  return result.z < 0 || (Math.abs(result.z) < 1e-6 && result.y < 0) ? mul(result, -1) : result;
+}
+
 function rotateFromTo(point: Point3D, from: Point3D, to: Point3D): Point3D {
   const source = unit(from); const target = unit(to);
   const cosine = Math.max(-1, Math.min(1, dot(source, target)));
@@ -352,7 +390,7 @@ function seedDirections(molecule: Molecule, atom: AtomId, parent: AtomId | undef
   return result;
 }
 
-function seedPositions(molecule: Molecule): Map<AtomId, Point3D> {
+function seedPositions(molecule: Molecule, adjusted: ReadonlyMap<BondId, number>): Map<AtomId, Point3D> {
   const positions = new Map<AtomId, Point3D>(); const visited = new Set<AtomId>();
   componentRoots(molecule).forEach((root, component) => {
     positions.set(root, { x: component * 5, y: 0, z: 0 }); visited.add(root);
@@ -361,12 +399,12 @@ function seedPositions(molecule: Molecule): Map<AtomId, Point3D> {
       const { atom, parent } = queue[i]!; const directions = seedDirections(molecule, atom, parent, positions);
       for (const neighbor of molecule.neighbors(atom)) if (!visited.has(neighbor)) {
         visited.add(neighbor);
-        positions.set(neighbor, add(positions.get(atom)!, mul(directions.get(neighbor)!, lengthOfBond(molecule, atom, neighbor))));
+        positions.set(neighbor, add(positions.get(atom)!, mul(directions.get(neighbor)!, lengthOfBond(molecule, atom, neighbor, adjusted))));
         queue.push({ atom: neighbor, parent: atom });
       }
     }
   });
-  seedFromRdkitDepiction(molecule, positions);
+  seedFromRdkitDepiction(molecule, positions, adjusted);
   return positions;
 }
 
@@ -375,7 +413,7 @@ function seedPositions(molecule: Molecule): Map<AtomId, Point3D> {
  * The constraint pass below replaces its arbitrary drawing lengths, lifts
  * sp3 centers into 3D, and remains the authority for every final coordinate.
  */
-function seedFromRdkitDepiction(molecule: Molecule, positions: Map<AtomId, Point3D>): void {
+function seedFromRdkitDepiction(molecule: Molecule, positions: Map<AtomId, Point3D>, adjusted: ReadonlyMap<BondId, number>): void {
   let molblock: string;
   try { molblock = molecule.getRdkitMolecule().get_new_coords(); } catch { return; }
   const lines = molblock.split(/\r?\n/);
@@ -402,7 +440,7 @@ function seedFromRdkitDepiction(molecule: Molecule, positions: Map<AtomId, Point
     const sp3Lift = hybridizationOf(molecule, atom) === 'sp3' ? Math.sin((atomNumber(atom) + 1) * 2.17) * 0.24 : 0;
     positions.set(atom, { x, y, z: sp3Lift });
   }
-  for (const center of heavy) placeHydrogenSeeds(molecule, center, positions);
+  for (const center of heavy) placeHydrogenSeeds(molecule, center, positions, adjusted);
   seedTetrahedralParity(molecule, positions);
 }
 
@@ -456,7 +494,7 @@ function mapDepictionAtoms(
   return search(0) ? result : undefined;
 }
 
-function placeHydrogenSeeds(molecule: Molecule, center: AtomId, positions: Map<AtomId, Point3D>): void {
+function placeHydrogenSeeds(molecule: Molecule, center: AtomId, positions: Map<AtomId, Point3D>, adjusted: ReadonlyMap<BondId, number>): void {
   const hydrogens = molecule.neighbors(center).filter((atom) => molecule.getAtom(atom).element === 'H');
   if (hydrogens.length === 0) return;
   const origin = positions.get(center)!;
@@ -481,18 +519,18 @@ function placeHydrogenSeeds(molecule: Molecule, center: AtomId, positions: Map<A
       const radial = add(mul(side, Math.cos(azimuth)), mul(otherSide, Math.sin(azimuth)));
       direction = unit(add(mul(away, 0.45), mul(radial, 0.893)));
     }
-    positions.set(hydrogen, add(origin, mul(direction, lengthOfBond(molecule, center, hydrogen))));
+    positions.set(hydrogen, add(origin, mul(direction, lengthOfBond(molecule, center, hydrogen, adjusted))));
   });
 }
 
 interface DistanceConstraint { a: AtomId; b: AtomId; distance: number; strength: number }
-function constraints(molecule: Molecule): DistanceConstraint[] {
+function constraints(molecule: Molecule, adjusted: ReadonlyMap<BondId, number>): DistanceConstraint[] {
   const result: DistanceConstraint[] = [];
-  for (const id of molecule.bonds()) { const { source, target } = molecule.getBond(id); result.push({ a: source, b: target, distance: lengthOfBond(molecule, source, target), strength: 1 }); }
+  for (const id of molecule.bonds()) { const { source, target } = molecule.getBond(id); result.push({ a: source, b: target, distance: lengthOfBond(molecule, source, target, adjusted), strength: adjusted.has(id) ? 1.6 : 1 }); }
   for (const center of molecule.atoms()) {
     const neighbors = molecule.neighbors(center); const cosine = Math.cos(idealBondAngle(molecule, center) * Math.PI / 180);
     for (let i = 0; i < neighbors.length; i += 1) for (let j = i + 1; j < neighbors.length; j += 1) {
-      const a = neighbors[i]!; const b = neighbors[j]!; const first = lengthOfBond(molecule, center, a); const second = lengthOfBond(molecule, center, b);
+      const a = neighbors[i]!; const b = neighbors[j]!; const first = lengthOfBond(molecule, center, a, adjusted); const second = lengthOfBond(molecule, center, b, adjusted);
       result.push({ a, b, distance: Math.sqrt(first * first + second * second - 2 * first * second * cosine), strength: 0.32 });
     }
   }
@@ -588,8 +626,8 @@ function separateAtomBonds(molecule: Molecule, positions: Map<AtomId, Point3D>, 
   }
 }
 
-function optimize(molecule: Molecule, positions: Map<AtomId, Point3D>): void {
-  const rules = constraints(molecule); const planes = conjugatedPlanarGroups(molecule); const bonded = bondedPairs(molecule); const iterations = molecule.atomCount < 40 ? 900 : 600;
+function optimize(molecule: Molecule, positions: Map<AtomId, Point3D>, adjusted: ReadonlyMap<BondId, number>): void {
+  const rules = constraints(molecule, adjusted); const planes = conjugatedPlanarGroups(molecule); const bonded = bondedPairs(molecule); const iterations = molecule.atomCount < 40 ? 900 : 600;
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     if (iteration % 2 === 0) for (const rule of rules) applyDistance(positions, rule); else for (let i = rules.length-1; i >= 0; i -= 1) applyDistance(positions,rules[i]!);
     for (const plane of planes) flattenGroup(positions,plane,0.72);
@@ -608,7 +646,8 @@ function centerPositions(positions: Map<AtomId, Point3D>): void {
 
 /** Deterministic constrained display conformer (not a quantum/force-field optimization). */
 export function generateMoleculeGeometry(molecule: Molecule): MoleculeGeometry {
-  const positions = seedPositions(molecule); optimize(molecule,positions); centerPositions(positions); return { positions };
+  const adjusted = resonanceAdjustedBondLengths(molecule);
+  const positions = seedPositions(molecule, adjusted); optimize(molecule,positions,adjusted); centerPositions(positions); return { positions };
 }
 
 function angle(a: Point3D, center: Point3D, b: Point3D): number {
@@ -617,8 +656,8 @@ function angle(a: Point3D, center: Point3D, b: Point3D): number {
 
 /** Validate bond lengths, local geometry, conjugated planes and intersections. */
 export function geometryIssues(molecule: Molecule, geometry: MoleculeGeometry): GeometryIssue[] {
-  const issues: GeometryIssue[]=[]; const {positions}=geometry;
-  for (const id of molecule.bonds()) { const {source,target}=molecule.getBond(id); const actual=magnitude(sub(positions.get(source)!,positions.get(target)!)); const expected=lengthOfBond(molecule,source,target); if(Math.abs(actual-expected)>0.08) issues.push({kind:'bond-length',atoms:[source,target],actual,expected}); }
+  const issues: GeometryIssue[]=[]; const {positions}=geometry; const adjusted=resonanceAdjustedBondLengths(molecule);
+  for (const id of molecule.bonds()) { const {source,target}=molecule.getBond(id); const actual=magnitude(sub(positions.get(source)!,positions.get(target)!)); const expected=lengthOfBond(molecule,source,target,adjusted); if(Math.abs(actual-expected)>0.08) issues.push({kind:'bond-length',atoms:[source,target],actual,expected}); }
   for (const center of molecule.atoms()) { const neighbors=molecule.neighbors(center); if(neighbors.length<2||molecule.getAtom(center).element==='H') continue; const expected=idealBondAngle(molecule,center); for(let i=0;i<neighbors.length;i+=1) for(let j=i+1;j<neighbors.length;j+=1){const actual=angle(positions.get(neighbors[i]!)!,positions.get(center)!,positions.get(neighbors[j]!)!); if(Math.abs(actual-expected)>(expected===180?12:20)) issues.push({kind:'bond-angle',atoms:[neighbors[i]!,center,neighbors[j]!],actual,expected});}}
   for(const group of conjugatedPlanarGroups(molecule)){const plane=bestPlane(group.map((atom)=>positions.get(atom)!)); for(const atom of group){const actual=Math.abs(dot(sub(positions.get(atom)!,plane.center),plane.normal)); if(actual>0.08) issues.push({kind:'planarity',atoms:[atom],actual,expected:0});}}
   const bonded=bondedPairs(molecule); const atoms=molecule.atoms(); for(let i=0;i<atoms.length;i+=1) for(let j=i+1;j<atoms.length;j+=1){const a=atoms[i]!,b=atoms[j]!; if(bonded.has(pairKey(a,b)))continue; const actual=magnitude(sub(positions.get(a)!,positions.get(b)!)); const expected=(COVALENT_RADIUS[molecule.getAtom(a).element]+COVALENT_RADIUS[molecule.getAtom(b).element])*0.64; if(actual<expected)issues.push({kind:'atom-overlap',atoms:[a,b],actual,expected});}

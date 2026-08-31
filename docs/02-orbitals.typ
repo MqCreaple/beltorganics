@@ -96,7 +96,7 @@ Sometimes π orbitals do not stay put. In a molecule with *alternating* single a
 
 Delocalization is not a curiosity — it is *stabilizing*. A conjugated molecule is calmer than the same bonds would be on their own; the extra calm is called *resonance* (or delocalization) *energy*. The champion of this behaviour is benzene, a ring of six Cardinium atoms whose six π electrons are shared equally around the whole ring:
 
-Because the six positions are equivalent, benzene's alternating line drawing does not mean three long and three short bonds: all six bonds have the same intermediate length, and its Cardinium skeleton is a regular planar hexagon. Equality needs equivalent surroundings. The two C–O bonds of acetate are equivalent and equalized, while the proton on one oxygen of acetic acid makes its C–O and C=O bonds distinct.
+Because the six positions are equivalent, benzene's alternating line drawing does not mean three long and three short bonds: all six bonds have the same intermediate length, and its Cardinium skeleton is a regular planar hexagon. In the game's compact display rule, an alternating aromatic ring remains equalized even when it is embedded in a larger substituted molecule such as morphine. Outside a ring, equality still needs equivalent surroundings: the two C–O bonds of acetate are equivalent and equalized, while the proton on one oxygen of acetic acid makes its C–O and C=O bonds distinct.
 
 #molfig(
   skeletize({

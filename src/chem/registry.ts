@@ -1,5 +1,7 @@
 import { parseSmiles } from './smiles';
+import { generateMoleculeGeometry } from './geometry';
 import type { Molecule } from './molecule';
+import type { MoleculeGeometry } from './geometry';
 import { getRdkitModule } from './rdkit';
 import type { RDMolecule } from './rdkit';
 
@@ -21,6 +23,12 @@ interface SvgCacheEntry {
   rdkit: RDMolecule;
 }
 
+interface GeometryCacheEntry {
+  geometry: MoleculeGeometry;
+  /** Structural snapshot used to detect mutation, as for the SVG cache. */
+  rdkit: RDMolecule;
+}
+
 /**
  * Global mapping from SMILES strings to molecule graphs (world groundwork;
  * see docs/game-world.md).
@@ -31,10 +39,10 @@ interface SvgCacheEntry {
  * Molecule instance per substance. The registry is the single source of
  * truth for string -> graph in the game.
  *
- * The registry also owns the lazily rendered structure-diagram SVG for each
- * substance (see `renderSvg`): it is rendered once from the molecule's cached
- * RDKit representation and reused afterwards, and is invalidated
- * automatically when the underlying molecule graph changes.
+ * The registry also owns each substance's lazily generated 3D display
+ * conformer and rendered structure-diagram SVG. Both are tied to the
+ * molecule's cached RDKit snapshot, reused afterwards, and invalidated
+ * automatically when the underlying graph changes.
  */
 export interface MoleculeRegistryOptions {
   /** Fetch implementation (injectable for tests); defaults to global fetch. */
@@ -50,6 +58,7 @@ export interface MoleculeRegistryOptions {
 export class MoleculeRegistry {
   readonly #molecules = new Map<string, Molecule>();
   readonly #svgCache = new Map<string, SvgCacheEntry>();
+  readonly #geometryCache = new Map<string, GeometryCacheEntry>();
   readonly #substanceNames = new Map<string, string | undefined>();
   readonly #substanceCommon = new Map<string, string | undefined>();
   readonly #substanceIupac = new Map<string, string | undefined>();
@@ -78,6 +87,26 @@ export class MoleculeRegistry {
   /** Number of distinct SMILES strings materialized so far. */
   get size(): number {
     return this.#molecules.size;
+  }
+
+  /**
+   * Deterministic display conformer, generated lazily once per substance.
+   * The RDKit snapshot identity changes after any graph mutation, providing
+   * the same automatic invalidation rule used by the structure-SVG cache.
+   */
+  geometry(smiles: string): MoleculeGeometry {
+    const molecule = this.get(smiles);
+    const rdkit = molecule.getRdkitMolecule();
+    const cached = this.#geometryCache.get(smiles);
+    if (cached !== undefined && cached.rdkit === rdkit) return cached.geometry;
+    const geometry = generateMoleculeGeometry(molecule);
+    this.#geometryCache.set(smiles, { geometry, rdkit });
+    return geometry;
+  }
+
+  /** Number of display conformers cached so far. */
+  get geometryCount(): number {
+    return this.#geometryCache.size;
   }
 
   /**
@@ -201,6 +230,7 @@ export class MoleculeRegistry {
   clear(): void {
     this.#molecules.clear();
     this.#svgCache.clear();
+    this.#geometryCache.clear();
     this.#substanceNames.clear();
     this.#substanceCommon.clear();
     this.#substanceIupac.clear();

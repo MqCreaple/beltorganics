@@ -167,7 +167,7 @@ Known simplifications: cross-conjugation and non-planar twisted geometries are n
 
 `src/chem/geometry.ts` keeps the molecular graph's integer bond orders for identity and reactions, but `resonanceAdjustedBondLengths` can assign an intermediate **display** length when equivalent resonance contributors exchange a single and double bond. The intentionally compact rules are:
 
-1. Average the single/double lengths around a uniform 4n+2 conjugated cycle only when every ring atom has the same element, charge, two in-system neighbours and the same external-neighbour signature. This makes benzene a regular hexagon while avoiding blanket equalization of asymmetric or fused conjugated rings.
+1. Find bounded alternating 4n+2 cycles inside each perceived conjugated system and average their single/double lengths by bonded element pair. Ring membership and alternating π bonds establish the display equalization; external substituents do not cancel it. This recognizes benzene rings embedded in substituted/fused structures such as morphine without flattening unrelated acyclic conjugation. The bounded search (rings up to 12 atoms) keeps perception cheap on large graphs.
 2. At one conjugated center, average single/double bonds to terminal neighbours only when the neighbours have the same element and identical hydrogen/heavy-neighbour environments. Acetate therefore has two equal C-O display lengths, while acetic acid keeps distinct C=O and C-OH lengths because only one oxygen bears hydrogen.
 3. The intermediate value is the game-requested arithmetic mean of the tabulated single- and double-bond lengths. This is a visual pseudo-chemistry rule, not a computed fractional bond order.
 

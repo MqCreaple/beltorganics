@@ -3,15 +3,21 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 import {
+  PI_SURFACE_ISOLATION,
+  PI_SURFACE_SUBTRACT,
+  metaballSupportRadius,
+  piLobeOffset,
+} from './pi-surface-math';
+import {
   ELEMENTS,
   conjugatedPiSystems,
   displayedLonePairCount,
-  generateMoleculeGeometry,
   hybridizationOf,
   lonePairDirections,
   partialCharges,
+  piSystemNormal,
 } from '../../chem';
-import type { AtomId, ElementSymbol, Molecule, Point3D } from '../../chem';
+import type { AtomId, ElementSymbol, Molecule, MoleculeGeometry, Point3D } from '../../chem';
 
 export type MoleculeViewerLayer =
   | 'structure'
@@ -23,6 +29,8 @@ export type MoleculeRepresentation = 'ball-stick' | 'space-fill';
 
 export interface MoleculeViewer3DProps {
   molecule: Molecule;
+  /** Registry-owned, mutation-aware cached display conformer. */
+  geometry: MoleculeGeometry;
 }
 
 const LAYERS: ReadonlyArray<{ value: MoleculeViewerLayer; label: string }> = [
@@ -51,6 +59,7 @@ interface ViewerRuntime {
   controls: OrbitControls;
   moleculeGroup: THREE.Group;
   atomMeshes: THREE.Mesh[];
+  orbitalMeshes: THREE.Mesh[];
   layer: MoleculeViewerLayer;
   frame: number;
   resizeObserver: ResizeObserver;
@@ -58,14 +67,22 @@ interface ViewerRuntime {
   onPointerLeave: () => void;
 }
 
-export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
+interface OrbitalHover {
+  left: number;
+  top: number;
+  id: string;
+  atomCount: number;
+  electronCount: number;
+}
+
+export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<ViewerRuntime | null>(null);
   const [layer, setLayer] = useState<MoleculeViewerLayer>('structure');
   const [representation, setRepresentation] = useState<MoleculeRepresentation>('ball-stick');
   const [hovered, setHovered] = useState<string>('Drag to rotate · scroll or pinch to zoom');
+  const [orbitalHover, setOrbitalHover] = useState<OrbitalHover | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const geometry = useMemo(() => generateMoleculeGeometry(molecule), [molecule]);
   const charges = useMemo(() => partialCharges(molecule), [molecule]);
   const piSystems = useMemo(() => conjugatedPiSystems(molecule), [molecule]);
 
@@ -125,6 +142,20 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(pointer, camera);
+      if (runtime.layer === 'orbitals') {
+        const orbitalHit = raycaster.intersectObjects(runtime.orbitalMeshes, false)[0];
+        const orbital = orbitalHit?.object.userData.piOrbital as Omit<OrbitalHover, 'left' | 'top'> | undefined;
+        if (orbital !== undefined) {
+          setOrbitalHover({
+            ...orbital,
+            left: Math.max(8, Math.min(rect.width - 142, event.clientX - rect.left + 14)),
+            top: Math.max(72, event.clientY - rect.top + 14),
+          });
+          setHovered(`Orbital ${orbital.id} · ${orbital.atomCount} atoms · ${orbital.electronCount} electrons`);
+          return;
+        }
+      }
+      setOrbitalHover(null);
       const hit = raycaster.intersectObjects(runtime.atomMeshes, false)[0];
       const atom = hit?.object.userData.atom as AtomId | undefined;
       if (atom === undefined) {
@@ -133,7 +164,10 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
         setHovered(atomDescription(molecule, atom, runtime.layer, charges, piSystems));
       }
     };
-    const onPointerLeave = () => setHovered('Drag to rotate · scroll or pinch to zoom');
+    const onPointerLeave = () => {
+      setHovered('Drag to rotate · scroll or pinch to zoom');
+      setOrbitalHover(null);
+    };
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerleave', onPointerLeave);
 
@@ -153,6 +187,7 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
       controls,
       moleculeGroup,
       atomMeshes: [],
+      orbitalMeshes: [],
       layer,
       frame: 0,
       resizeObserver,
@@ -187,7 +222,7 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
     runtime.layer = layer;
     disposeObject(runtime.moleculeGroup);
     runtime.moleculeGroup.clear();
-    runtime.atomMeshes = populateMolecule(
+    const meshes = populateMolecule(
       runtime.moleculeGroup,
       molecule,
       geometry.positions,
@@ -196,7 +231,10 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
       layer,
       representation,
     );
+    runtime.atomMeshes = meshes.atoms;
+    runtime.orbitalMeshes = meshes.orbitals;
     setHovered('Drag to rotate · scroll or pinch to zoom');
+    setOrbitalHover(null);
   }, [molecule, geometry, charges, piSystems, layer, representation]);
 
   return (
@@ -240,6 +278,16 @@ export function MoleculeViewer3D({ molecule }: MoleculeViewer3DProps) {
         >
           Reset view
         </button>
+        {orbitalHover === null ? null : (
+          <aside
+            className="molecule-viewer-orbital-tooltip"
+            style={{ left: orbitalHover.left, top: orbitalHover.top }}
+          >
+            <strong>Orbital {orbitalHover.id}</strong>
+            <span>{orbitalHover.atomCount} atoms</span>
+            <span>{orbitalHover.electronCount} electrons</span>
+          </aside>
+        )}
         {error === null ? null : <p className="molecule-viewer-error">3D view unavailable: {error}</p>}
       </div>
       <div className="molecule-viewer-caption">
@@ -274,8 +322,9 @@ function populateMolecule(
   piSystems: ReturnType<typeof conjugatedPiSystems>,
   layer: MoleculeViewerLayer,
   representation: MoleculeRepresentation,
-): THREE.Mesh[] {
+): { atoms: THREE.Mesh[]; orbitals: THREE.Mesh[] } {
   const atomMeshes: THREE.Mesh[] = [];
+  let orbitalMeshes: THREE.Mesh[] = [];
   const showBonds = representation === 'ball-stick' || layer === 'orbitals';
 
   if (showBonds) {
@@ -327,9 +376,9 @@ function populateMolecule(
     if (layer === 'density') addLonePairs(group, molecule, atom, positions);
   }
 
-  if (layer === 'density') addPiElectronClouds(group, positions, piSystems);
-  if (layer === 'orbitals') addPiOrbitals(group, positions, piSystems);
-  return atomMeshes;
+  if (layer === 'density') addPiElectronClouds(group, molecule, positions, piSystems);
+  if (layer === 'orbitals') orbitalMeshes = addPiOrbitals(group, molecule, positions, piSystems);
+  return { atoms: atomMeshes, orbitals: orbitalMeshes };
 }
 
 const PI_SYSTEM_COLORS = [0x3978c5, 0xa34a9d, 0x24866d, 0xc66b24, 0x7053bd, 0x147f9c] as const;
@@ -372,10 +421,10 @@ function addLonePairs(group: THREE.Group, molecule: Molecule, atom: AtomId, posi
   });
 }
 
-function addPiElectronClouds(group: THREE.Group, positions: ReadonlyMap<AtomId, Point3D>, systems: ReturnType<typeof conjugatedPiSystems>): void {
+function addPiElectronClouds(group: THREE.Group, molecule: Molecule, positions: ReadonlyMap<AtomId, Point3D>, systems: ReturnType<typeof conjugatedPiSystems>): void {
   systems.forEach((system, systemIndex) => {
     if (system.atoms.length < 2) return;
-    const normal = systemNormal(system.atoms, positions, systemIndex);
+    const normal = vectorOf(piSystemNormal(molecule, system.atoms, positions, systemIndex));
     const color = PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!;
     for (const phase of [-1, 1] as const) addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.2, 0.72, 3);
   });
@@ -383,17 +432,26 @@ function addPiElectronClouds(group: THREE.Group, positions: ReadonlyMap<AtomId, 
 
 function addPiOrbitals(
   group: THREE.Group,
+  molecule: Molecule,
   positions: ReadonlyMap<AtomId, Point3D>,
   systems: ReturnType<typeof conjugatedPiSystems>,
-): void {
+): THREE.Mesh[] {
+  const result: THREE.Mesh[] = [];
   systems.forEach((system, systemIndex) => {
-    const normal = systemNormal(system.atoms, positions, systemIndex);
+    const normal = vectorOf(piSystemNormal(molecule, system.atoms, positions, systemIndex));
     const base = new THREE.Color(PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!);
     for (const phase of [-1, 1] as const) {
       const color = base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex();
-      addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.5, 0.58, 4);
+      const surface = addMergedPiSurface(group, system.atoms, positions, normal, phase, color, 0.5, 0.58, 4);
+      surface.userData.piOrbital = {
+        id: `π${systemIndex + 1}`,
+        atomCount: system.atoms.length,
+        electronCount: system.electronCount,
+      };
+      result.push(surface);
     }
   });
+  return result;
 }
 
 /** One smooth marching-cubes entity for one side of a complete π system. */
@@ -407,9 +465,17 @@ function addMergedPiSurface(
   opacity: number,
   radius: number,
   renderOrder: number,
-): void {
-  const centers = atoms.map((atom) => vectorOf(positions.get(atom)!).addScaledVector(normal, phase * 0.4));
-  const bounds = new THREE.Box3().setFromPoints(centers).expandByScalar(radius * 1.4);
+): THREE.Mesh {
+  // Offset each lobe by its isolated isosurface radius so opposite phases
+  // barely meet at the molecular plane instead of overlapping visibly.
+  const centers = atoms.map((atom) => vectorOf(positions.get(atom)!).addScaledVector(normal, phase * piLobeOffset(radius)));
+  const isolation = PI_SURFACE_ISOLATION;
+  const subtract = PI_SURFACE_SUBTRACT;
+  // A Three.js metaball's positive field extends beyond its requested
+  // isosurface to sqrt(strength/subtract). Bound that complete support; the
+  // old 1.4 * radius padding clipped benzene and naphthalene.
+  const supportRadius = metaballSupportRadius(radius, isolation, subtract);
+  const bounds = new THREE.Box3().setFromPoints(centers).expandByScalar(supportRadius * 1.05);
   const center = bounds.getCenter(new THREE.Vector3());
   const extent = Math.max(1.8, bounds.getSize(new THREE.Vector3()).x, bounds.getSize(new THREE.Vector3()).y, bounds.getSize(new THREE.Vector3()).z);
   const material = new THREE.MeshPhongMaterial({
@@ -421,10 +487,9 @@ function addMergedPiSurface(
     side: THREE.DoubleSide,
   });
   const surface = new MarchingCubes(28, material, false, false, 30_000);
-  surface.isolation = 50;
+  surface.isolation = isolation;
   surface.position.copy(center);
   surface.scale.setScalar(extent / 2);
-  const subtract = 12;
   const strength = (surface.isolation + subtract) * (radius / extent) ** 2;
   for (const point of centers) {
     surface.addBall(
@@ -438,32 +503,7 @@ function addMergedPiSurface(
   surface.update();
   surface.renderOrder = renderOrder;
   group.add(surface);
-}
-
-function systemNormal(
-  atoms: readonly AtomId[],
-  positions: ReadonlyMap<AtomId, Point3D>,
-  systemIndex: number,
-): THREE.Vector3 {
-  for (let first = 0; first < atoms.length - 2; first += 1) {
-    const origin = vectorOf(positions.get(atoms[first]!)!);
-    for (let second = first + 1; second < atoms.length - 1; second += 1) {
-      const a = vectorOf(positions.get(atoms[second]!)!).sub(origin);
-      for (let third = second + 1; third < atoms.length; third += 1) {
-        const normal = new THREE.Vector3().crossVectors(a, vectorOf(positions.get(atoms[third]!)!).sub(origin));
-        if (normal.lengthSq() > 1e-6) {
-          normal.normalize();
-          if (normal.z < 0 || (Math.abs(normal.z) < 1e-6 && normal.y < 0)) normal.negate();
-          return normal;
-        }
-      }
-    }
-  }
-  const direction = atoms.length > 1 ? vectorOf(positions.get(atoms[1]!)!).sub(vectorOf(positions.get(atoms[0]!)!)).normalize() : new THREE.Vector3(1, 0, 0);
-  const firstNormal = new THREE.Vector3()
-    .crossVectors(direction, Math.abs(direction.z) < 0.8 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0))
-    .normalize();
-  return systemIndex % 2 === 0 ? firstNormal : new THREE.Vector3().crossVectors(direction, firstNormal).normalize();
+  return surface;
 }
 
 function atomColor(molecule: Molecule, atom: AtomId, layer: MoleculeViewerLayer, charge: number): number {

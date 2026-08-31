@@ -46,7 +46,8 @@ clickable, and open a centered panel (built with Preact/TSX in `src/game/ui/`)
 showing the substance name, formula and SMILES above a draggable, zoomable 3D
 molecule. The viewer switches between ball-and-stick and overlapping van der Waals space-filling models;
 Structure, Hybridization, Charge, Electron cloud and merged, color-grouped pi-orbital overlays color
-or shape the model itself without numbered atom references.
+or shape the model itself without numbered atom references. Generated coordinates are registry-cached,
+and hovering a pi surface shows its orbital ID, atom count and electron count beside the pointer.
 Player-facing docs: `docs/game-world.md`.
 
 ## Quickstart

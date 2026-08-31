@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { formulaParts } from '../../chem';
-import type { MolecularFormula, Molecule, MoleculeRegistry } from '../../chem';
+import type { MolecularFormula, Molecule, MoleculeGeometry, MoleculeRegistry } from '../../chem';
 import { MoleculeViewer3D } from './molecule-viewer-3d';
 
 /**
@@ -38,10 +38,12 @@ export function MoleculePanel({ formula, registry }: MoleculePanelProps) {
 
   let chemicalFormula: MolecularFormula | null = null;
   let molecule: Molecule | null = null;
+  let geometry: MoleculeGeometry | null = null;
   let error: string | null = null;
   try {
     molecule = registry.get(formula);
     chemicalFormula = molecule.molecularFormula();
+    geometry = registry.geometry(formula);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
@@ -82,12 +84,12 @@ export function MoleculePanel({ formula, registry }: MoleculePanelProps) {
           </tr>
         </tbody>
       </table>
-      {molecule === null ? (
+      {molecule === null || geometry === null ? (
         <p className="molecule-panel-note">
           {error !== null ? `Could not build the molecule: ${error}` : 'Molecule unavailable.'}
         </p>
       ) : (
-        <MoleculeViewer3D molecule={molecule} />
+        <MoleculeViewer3D molecule={molecule} geometry={geometry} />
       )}
     </div>
   );

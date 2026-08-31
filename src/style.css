@@ -198,6 +198,28 @@ body {
   color: #4a5668;
   backdrop-filter: blur(6px);
 }
+.molecule-viewer-orbital-tooltip {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 0.12rem;
+  min-width: 118px;
+  padding: 0.48rem 0.58rem;
+  border: 1px solid rgba(91, 109, 139, 0.32);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 5px 18px rgba(42, 54, 75, 0.17);
+  color: #4b576a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateY(-100%);
+  backdrop-filter: blur(6px);
+}
+.molecule-viewer-orbital-tooltip strong {
+  color: #263650;
+  font-size: 12px;
+}
 .molecule-viewer-error {
   position: absolute;
   inset: 0;
