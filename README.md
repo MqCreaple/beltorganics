@@ -81,6 +81,8 @@ tests and the browser alike.
 - `src/chem/` - chemistry engine (molecule data structure on graphology;
   SMILES via RDKit.js; hybridization, conjugation, PEOE partial charges and
   topology-derived display conformers; further properties planned)
+- `src/math/` - reusable Three.js `Vector3` rotations, plane fitting,
+  constraints, distances and related geometry operations
 - `src/world/` - world simulation (infinite chunked grid, blocks; belts,
   chambers, ports next)
 - `src/game/` - Phaser 4 game shell (grid, camera, input, HUD), the Preact/TSX

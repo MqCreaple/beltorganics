@@ -1,11 +1,26 @@
+import { Vector3 } from 'three';
+import {
+  angleDegrees,
+  applyDistanceConstraint,
+  bestFitPlane,
+  canonicalNormal,
+  centerPointMap,
+  flattenPointMap,
+  normalized,
+  perpendicular,
+  rotateAroundAxis,
+  rotateFromTo,
+  segmentDistance,
+  spreadAround,
+} from '../math';
+import type { DistanceConstraint } from '../math';
 import { conjugatedPiSystems } from './conjugation';
 import { hybridizationOf } from './hybridization';
 import { orderIndicator } from './tetrahedral';
 import type { Molecule } from './molecule';
 import type { AtomId, BondId, BondOrder, ElementSymbol } from './types';
 
-export interface Point3D { x: number; y: number; z: number }
-export interface MoleculeGeometry { positions: Map<AtomId, Point3D> }
+export interface MoleculeGeometry { positions: Map<AtomId, Vector3> }
 export interface GeometryIssue {
   kind: 'bond-length' | 'bond-angle' | 'planarity' | 'atom-overlap' | 'atom-bond' | 'bond-crossing';
   atoms: AtomId[];
@@ -20,19 +35,12 @@ const TYPICAL_BOND_LENGTHS = new Map<string, number>([
   ['C-N-1', 1.47], ['C-N-2', 1.28], ['C-N-3', 1.16], ['H-N-1', 1.01],
 ]);
 
-const add = (a: Point3D, b: Point3D): Point3D => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
-const sub = (a: Point3D, b: Point3D): Point3D => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
-const mul = (a: Point3D, n: number): Point3D => ({ x: a.x * n, y: a.y * n, z: a.z * n });
-const dot = (a: Point3D, b: Point3D): number => a.x * b.x + a.y * b.y + a.z * b.z;
-const cross = (a: Point3D, b: Point3D): Point3D => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
-const magnitude = (a: Point3D): number => Math.hypot(a.x, a.y, a.z);
-function unit(a: Point3D): Point3D { const length = magnitude(a); return length < 1e-9 ? { x: 1, y: 0, z: 0 } : mul(a, 1 / length); }
 const atomNumber = (atom: AtomId): number => Number.parseInt(atom.replace(/\D/g, ''), 10) || 0;
 const pairKey = (a: string, b: string): string => a < b ? `${a}|${b}` : `${b}|${a}`;
 
-const TETRAHEDRAL: readonly Point3D[] = [
-  unit({ x: 1, y: 1, z: 1 }), unit({ x: 1, y: -1, z: -1 }),
-  unit({ x: -1, y: 1, z: -1 }), unit({ x: -1, y: -1, z: 1 }),
+const TETRAHEDRAL: readonly Vector3[] = [
+  new Vector3(1, 1, 1).normalize(), new Vector3(1, -1, -1).normalize(),
+  new Vector3(-1, 1, -1).normalize(), new Vector3(-1, -1, 1).normalize(),
 ];
 
 function bondKey(a: ElementSymbol, b: ElementSymbol, order: BondOrder): string {
@@ -187,85 +195,64 @@ export function displayedLonePairCount(molecule: Molecule, atom: AtomId): number
 export function lonePairDirections(
   molecule: Molecule,
   atom: AtomId,
-  positions: ReadonlyMap<AtomId, Point3D>,
-): Point3D[] {
+  positions: ReadonlyMap<AtomId, Vector3>,
+): Vector3[] {
   const count = displayedLonePairCount(molecule, atom);
   if (count === 0) return [];
   const center = positions.get(atom)!;
-  const bonds = molecule.neighbors(atom).map((neighbor) => unit(sub(positions.get(neighbor)!, center)));
+  const bonds = molecule.neighbors(atom).map((neighbor) => (
+    normalized(positions.get(neighbor)!.clone().sub(center))
+  ));
   const hybridization = hybridizationOf(molecule, atom);
-  let away = { x: 0, y: 0, z: 0 };
-  for (const direction of bonds) away = sub(away, direction);
-  if (magnitude(away) < 1e-7) away = perpendicular(bonds[0] ?? { x: 1, y: 0, z: 0 }, atomNumber(atom));
-  away = unit(away);
+  let away = bonds.reduce((result, direction) => result.sub(direction), new Vector3());
+  if (away.length() < 1e-7) away = perpendicular(bonds[0] ?? new Vector3(1, 0, 0), atomNumber(atom));
+  away = normalized(away);
 
   if (hybridization === 'sp2') {
     const normal = localPiPlaneNormal(molecule, atom, positions, bonds);
     if (count === 2 && bonds.length === 1) {
       return [rotateAroundAxis(bonds[0]!, normal, 2 * Math.PI / 3), rotateAroundAxis(bonds[0]!, normal, -2 * Math.PI / 3)];
     }
-    const planarAway = unit(sub(away, mul(normal, dot(away, normal))));
+    const planarAway = normalized(away.clone().addScaledVector(normal, -away.dot(normal)));
     if (count === 1) return [planarAway];
     return spreadAround(planarAway, normal, count, 2 * Math.PI / 3);
   }
 
   if (count === 2 && bonds.length >= 2) {
-    const rawNormal = cross(bonds[0]!, bonds[1]!);
-    const normal = magnitude(rawNormal) < 1e-7
+    const rawNormal = new Vector3().crossVectors(bonds[0]!, bonds[1]!);
+    const normal = rawNormal.length() < 1e-7
       ? perpendicular(away, atomNumber(atom))
-      : unit(rawNormal);
+      : normalized(rawNormal);
     return [
-      unit(add(mul(away, Math.sqrt(1 / 3)), mul(normal, Math.sqrt(2 / 3)))),
-      unit(sub(mul(away, Math.sqrt(1 / 3)), mul(normal, Math.sqrt(2 / 3)))),
+      away.clone().multiplyScalar(Math.sqrt(1 / 3)).addScaledVector(normal, Math.sqrt(2 / 3)).normalize(),
+      away.clone().multiplyScalar(Math.sqrt(1 / 3)).addScaledVector(normal, -Math.sqrt(2 / 3)).normalize(),
     ];
   }
   if (count === 1) return [away];
 
-  const axis = bonds[0] ?? mul(away, -1);
+  const axis = bonds[0] ?? away.clone().multiplyScalar(-1);
   const radial1 = perpendicular(axis, atomNumber(atom));
-  const radial2 = unit(cross(axis, radial1));
+  const radial2 = new Vector3().crossVectors(axis, radial1).normalize();
   return Array.from({ length: count }, (_, index) => {
     const azimuth = index * 2 * Math.PI / count;
-    const radial = add(mul(radial1, Math.cos(azimuth)), mul(radial2, Math.sin(azimuth)));
-    return unit(add(mul(axis, -1 / 3), mul(radial, 2 * Math.sqrt(2) / 3)));
+    const radial = radial1.clone().multiplyScalar(Math.cos(azimuth)).addScaledVector(radial2, Math.sin(azimuth));
+    return axis.clone().multiplyScalar(-1 / 3).addScaledVector(radial, 2 * Math.sqrt(2) / 3).normalize();
   });
 }
 
 function localPiPlaneNormal(
   molecule: Molecule,
   atom: AtomId,
-  positions: ReadonlyMap<AtomId, Point3D>,
-  bondDirections: readonly Point3D[],
-): Point3D {
+  positions: ReadonlyMap<AtomId, Vector3>,
+  bondDirections: readonly Vector3[],
+): Vector3 {
   const group = conjugatedPlanarGroups(molecule).find((candidate) => candidate.includes(atom));
-  if (group !== undefined && group.length >= 3) return bestPlane(group.map((id) => positions.get(id)!)).normal;
-  if (bondDirections.length >= 2 && magnitude(cross(bondDirections[0]!, bondDirections[1]!)) > 1e-7) {
-    return unit(cross(bondDirections[0]!, bondDirections[1]!));
+  if (group !== undefined && group.length >= 3) return bestFitPlane(group.map((id) => positions.get(id)!)).normal;
+  if (bondDirections.length >= 2) {
+    const normal = new Vector3().crossVectors(bondDirections[0]!, bondDirections[1]!);
+    if (normal.length() > 1e-7) return normal.normalize();
   }
-  return perpendicular(bondDirections[0] ?? { x: 1, y: 0, z: 0 }, atomNumber(atom));
-}
-
-function rotateAroundAxis(vector: Point3D, axis: Point3D, radians: number): Point3D {
-  const cosine = Math.cos(radians);
-  const sine = Math.sin(radians);
-  return unit(add(
-    add(mul(vector, cosine), mul(cross(axis, vector), sine)),
-    mul(axis, dot(axis, vector) * (1 - cosine)),
-  ));
-}
-
-function spreadAround(direction: Point3D, axis: Point3D, count: number, span: number): Point3D[] {
-  return Array.from({ length: count }, (_, index) => {
-    const fraction = count === 1 ? 0 : index / (count - 1) - 0.5;
-    return rotateAroundAxis(direction, axis, fraction * span);
-  });
-}
-
-function perpendicular(axis: Point3D, salt = 0): Point3D {
-  const references: Point3D[] = [{ x: 0, y: 0, z: 1 }, { x: 0, y: 1, z: 0 }, { x: 1, y: 0, z: 0 }];
-  let reference = references[salt % references.length]!;
-  if (Math.abs(dot(unit(axis), reference)) > 0.85) reference = references[(salt + 1) % references.length]!;
-  return unit(cross(axis, reference));
+  return perpendicular(bondDirections[0] ?? new Vector3(1, 0, 0), atomNumber(atom));
 }
 
 /**
@@ -279,35 +266,37 @@ function perpendicular(axis: Point3D, salt = 0): Point3D {
 export function piSystemNormal(
   molecule: Molecule,
   atoms: readonly AtomId[],
-  positions: ReadonlyMap<AtomId, Point3D>,
+  positions: ReadonlyMap<AtomId, Vector3>,
   systemIndex = 0,
-): Point3D {
+): Vector3 {
   for (let first = 0; first < atoms.length - 2; first += 1) {
     const origin = positions.get(atoms[first]!)!;
     for (let second = first + 1; second < atoms.length - 1; second += 1) {
-      const a = sub(positions.get(atoms[second]!)!, origin);
+      const a = positions.get(atoms[second]!)!.clone().sub(origin);
       for (let third = second + 1; third < atoms.length; third += 1) {
-        const normal = cross(a, sub(positions.get(atoms[third]!)!, origin));
-        if (magnitude(normal) > 1e-6) return canonicalNormal(normal);
+        const normal = new Vector3().crossVectors(a, positions.get(atoms[third]!)!.clone().sub(origin));
+        if (normal.length() > 1e-6) return canonicalNormal(normal);
       }
     }
   }
 
   const first = atoms[0];
   const second = atoms[1];
-  if (first === undefined || second === undefined) return { x: 0, y: 0, z: 1 };
-  const axis = unit(sub(positions.get(second)!, positions.get(first)!));
+  if (first === undefined || second === undefined) return new Vector3(0, 0, 1);
+  const axis = normalized(positions.get(second)!.clone().sub(positions.get(first)!));
   const participating = new Set(atoms);
   for (const center of [first, second]) {
     for (const neighbor of molecule.neighbors(center)) {
       if (participating.has(neighbor)) continue;
-      const normal = cross(axis, sub(positions.get(neighbor)!, positions.get(center)!));
-      if (magnitude(normal) > 1e-6) return canonicalNormal(normal);
+      const normal = new Vector3().crossVectors(axis, positions.get(neighbor)!.clone().sub(positions.get(center)!));
+      if (normal.length() > 1e-6) return canonicalNormal(normal);
     }
   }
 
   const firstNormal = perpendicular(axis, 0);
-  return systemIndex % 2 === 0 ? canonicalNormal(firstNormal) : canonicalNormal(cross(axis, firstNormal));
+  return systemIndex % 2 === 0
+    ? canonicalNormal(firstNormal)
+    : canonicalNormal(new Vector3().crossVectors(axis, firstNormal));
 }
 
 /**
@@ -319,9 +308,9 @@ export function piSystemNormal(
 export function piSystemNormals(
   molecule: Molecule,
   systems: readonly { atoms: readonly AtomId[] }[],
-  positions: ReadonlyMap<AtomId, Point3D>,
-): Point3D[] {
-  const normals: Point3D[] = [];
+  positions: ReadonlyMap<AtomId, Vector3>,
+): Vector3[] {
+  const normals: Vector3[] = [];
   systems.forEach((system, index) => {
     let normal = piSystemNormal(molecule, system.atoms, positions, index);
     for (let previous = 0; previous < index; previous += 1) {
@@ -329,28 +318,14 @@ export function piSystemNormals(
       if (shared.length !== 2) continue;
       const sharedBond = molecule.bondBetween(shared[0]!, shared[1]!);
       if (sharedBond === undefined || molecule.getBond(sharedBond).order !== 3) continue;
-      const axis = unit(sub(positions.get(shared[1]!)!, positions.get(shared[0]!)!));
-      const perpendicularNormal = cross(axis, normals[previous]!);
-      if (magnitude(perpendicularNormal) > 1e-6) normal = canonicalNormal(perpendicularNormal);
+      const axis = normalized(positions.get(shared[1]!)!.clone().sub(positions.get(shared[0]!)!));
+      const perpendicularNormal = new Vector3().crossVectors(axis, normals[previous]!);
+      if (perpendicularNormal.length() > 1e-6) normal = canonicalNormal(perpendicularNormal);
       break;
     }
     normals.push(normal);
   });
   return normals;
-}
-
-function canonicalNormal(normal: Point3D): Point3D {
-  const result = unit(normal);
-  return result.z < 0 || (Math.abs(result.z) < 1e-6 && result.y < 0) ? mul(result, -1) : result;
-}
-
-function rotateFromTo(point: Point3D, from: Point3D, to: Point3D): Point3D {
-  const source = unit(from); const target = unit(to);
-  const cosine = Math.max(-1, Math.min(1, dot(source, target)));
-  if (cosine > 0.999999) return point;
-  if (cosine < -0.999999) { const axis = perpendicular(source); return sub(mul(axis, 2 * dot(axis, point)), point); }
-  const axis = unit(cross(source, target)); const sine = Math.sqrt(1 - cosine * cosine);
-  return add(add(mul(point, cosine), mul(cross(axis, point), sine)), mul(axis, dot(axis, point) * (1 - cosine)));
 }
 
 function componentRoots(molecule: Molecule): AtomId[] {
@@ -371,67 +346,76 @@ function componentRoots(molecule: Molecule): AtomId[] {
   return roots;
 }
 
-function orientDoubleBond(molecule: Molecule, atom: AtomId, parent: AtomId, positions: ReadonlyMap<AtomId, Point3D>, directions: Map<AtomId, Point3D>): void {
+function orientDoubleBond(molecule: Molecule, atom: AtomId, parent: AtomId, positions: ReadonlyMap<AtomId, Vector3>, directions: Map<AtomId, Vector3>): void {
   const stereo = molecule.getBond(molecule.bondBetween(atom, parent)!).stereo;
   if (stereo === undefined) return;
   const here = molecule.neighbors(atom).find((n) => n !== parent && molecule.getAtom(n).element !== 'H');
   const there = molecule.neighbors(parent).find((n) => n !== atom && molecule.getAtom(n).element !== 'H');
   if (here === undefined || there === undefined || positions.get(there) === undefined) return;
-  const axis = unit(sub(positions.get(atom)!, positions.get(parent)!));
-  const rawOther = sub(positions.get(there)!, positions.get(parent)!);
-  const otherSide = sub(rawOther, mul(axis, dot(rawOther, axis)));
-  const thisDirection = directions.get(here)!; const thisSide = sub(thisDirection, mul(axis, dot(thisDirection, axis)));
+  const axis = normalized(positions.get(atom)!.clone().sub(positions.get(parent)!));
+  const rawOther = positions.get(there)!.clone().sub(positions.get(parent)!);
+  const otherSide = rawOther.clone().addScaledVector(axis, -rawOther.dot(axis));
+  const thisDirection = directions.get(here)!;
+  const thisSide = thisDirection.clone().addScaledVector(axis, -thisDirection.dot(axis));
   const hereBond = molecule.bondBetween(atom, here)!;
   const thereBond = molecule.bondBetween(parent, there)!;
   const cis = stereo.includes(hereBond) === stereo.includes(thereBond);
-  if ((dot(otherSide, thisSide) > 0) === cis) return;
+  if ((otherSide.dot(thisSide) > 0) === cis) return;
   for (const neighbor of molecule.neighbors(atom)) if (neighbor !== parent) {
     const direction = directions.get(neighbor)!;
-    directions.set(neighbor, sub(mul(axis, 2 * dot(direction, axis)), direction));
+    directions.set(neighbor, axis.clone().multiplyScalar(2 * direction.dot(axis)).sub(direction));
   }
 }
 
-function seedDirections(molecule: Molecule, atom: AtomId, parent: AtomId | undefined, positions: ReadonlyMap<AtomId, Point3D>): Map<AtomId, Point3D> {
-  const neighbors = molecule.neighbors(atom); const result = new Map<AtomId, Point3D>();
-  const parentDirection = parent === undefined ? undefined : unit(sub(positions.get(parent)!, positions.get(atom)!));
+function seedDirections(molecule: Molecule, atom: AtomId, parent: AtomId | undefined, positions: ReadonlyMap<AtomId, Vector3>): Map<AtomId, Vector3> {
+  const neighbors = molecule.neighbors(atom); const result = new Map<AtomId, Vector3>();
+  const parentDirection = parent === undefined
+    ? undefined
+    : normalized(positions.get(parent)!.clone().sub(positions.get(atom)!));
   const stereo = molecule.getAtom(atom).stereo;
   if (stereo !== undefined) {
     const parentBond = parent === undefined ? undefined : molecule.bondBetween(atom, parent);
     const parentIndex = parentBond === undefined ? -1 : stereo.indexOf(parentBond);
-    const directions = parentIndex < 0 || parentDirection === undefined ? [...TETRAHEDRAL] : TETRAHEDRAL.map((d) => rotateFromTo(d, TETRAHEDRAL[parentIndex]!, parentDirection));
+    const directions = parentIndex < 0 || parentDirection === undefined
+      ? TETRAHEDRAL.map((direction) => direction.clone())
+      : TETRAHEDRAL.map((direction) => rotateFromTo(direction, TETRAHEDRAL[parentIndex]!, parentDirection));
     for (const neighbor of neighbors) result.set(neighbor, directions[stereo.indexOf(molecule.bondBetween(atom, neighbor)!)]!);
     return result;
   }
   const hybridization = hybridizationOf(molecule, atom);
   if (parentDirection === undefined) {
-    if (hybridization === 'sp') neighbors.forEach((neighbor, i) => result.set(neighbor, { x: i === 0 ? 1 : -1, y: 0, z: 0 }));
-    else if (hybridization === 'sp2') neighbors.forEach((neighbor, i) => result.set(neighbor, { x: Math.cos(i * 2 * Math.PI / 3), y: Math.sin(i * 2 * Math.PI / 3), z: 0 }));
-    else neighbors.forEach((neighbor, i) => result.set(neighbor, TETRAHEDRAL[i] ?? TETRAHEDRAL[0]!));
+    if (hybridization === 'sp') neighbors.forEach((neighbor, index) => result.set(neighbor, new Vector3(index === 0 ? 1 : -1, 0, 0)));
+    else if (hybridization === 'sp2') neighbors.forEach((neighbor, index) => result.set(neighbor, new Vector3(Math.cos(index * 2 * Math.PI / 3), Math.sin(index * 2 * Math.PI / 3), 0)));
+    else neighbors.forEach((neighbor, index) => result.set(neighbor, (TETRAHEDRAL[index] ?? TETRAHEDRAL[0]!).clone()));
     return result;
   }
   result.set(parent!, parentDirection);
   const children = neighbors.filter((neighbor) => neighbor !== parent);
-  const axis1 = perpendicular(parentDirection, atomNumber(atom)); const axis2 = unit(cross(parentDirection, axis1));
+  const axis1 = perpendicular(parentDirection, atomNumber(atom));
+  const axis2 = new Vector3().crossVectors(parentDirection, axis1).normalize();
   const theta = idealBondAngle(molecule, atom) * Math.PI / 180;
   children.forEach((child, i) => {
     const azimuth = 2 * Math.PI * i / Math.max(1, children.length) + atomNumber(atom) * 2.399963;
-    const radial = add(mul(axis1, Math.cos(azimuth)), mul(axis2, Math.sin(azimuth)));
-    result.set(child, unit(add(mul(parentDirection, Math.cos(theta)), mul(radial, Math.sin(theta)))));
+    const radial = axis1.clone().multiplyScalar(Math.cos(azimuth)).addScaledVector(axis2, Math.sin(azimuth));
+    result.set(child, parentDirection.clone().multiplyScalar(Math.cos(theta)).addScaledVector(radial, Math.sin(theta)).normalize());
   });
   orientDoubleBond(molecule, atom, parent!, positions, result);
   return result;
 }
 
-function seedPositions(molecule: Molecule, adjusted: ReadonlyMap<BondId, number>): Map<AtomId, Point3D> {
-  const positions = new Map<AtomId, Point3D>(); const visited = new Set<AtomId>();
+function seedPositions(molecule: Molecule, adjusted: ReadonlyMap<BondId, number>): Map<AtomId, Vector3> {
+  const positions = new Map<AtomId, Vector3>(); const visited = new Set<AtomId>();
   componentRoots(molecule).forEach((root, component) => {
-    positions.set(root, { x: component * 5, y: 0, z: 0 }); visited.add(root);
+    positions.set(root, new Vector3(component * 5, 0, 0)); visited.add(root);
     const queue: Array<{ atom: AtomId; parent?: AtomId }> = [{ atom: root }];
     for (let i = 0; i < queue.length; i += 1) {
       const { atom, parent } = queue[i]!; const directions = seedDirections(molecule, atom, parent, positions);
       for (const neighbor of molecule.neighbors(atom)) if (!visited.has(neighbor)) {
         visited.add(neighbor);
-        positions.set(neighbor, add(positions.get(atom)!, mul(directions.get(neighbor)!, lengthOfBond(molecule, atom, neighbor, adjusted))));
+        positions.set(neighbor, positions.get(atom)!.clone().addScaledVector(
+          directions.get(neighbor)!,
+          lengthOfBond(molecule, atom, neighbor, adjusted),
+        ));
         queue.push({ atom: neighbor, parent: atom });
       }
     }
@@ -445,7 +429,7 @@ function seedPositions(molecule: Molecule, adjusted: ReadonlyMap<BondId, number>
  * The constraint pass below replaces its arbitrary drawing lengths, lifts
  * sp3 centers into 3D, and remains the authority for every final coordinate.
  */
-function seedFromRdkitDepiction(molecule: Molecule, positions: Map<AtomId, Point3D>, adjusted: ReadonlyMap<BondId, number>): void {
+function seedFromRdkitDepiction(molecule: Molecule, positions: Map<AtomId, Vector3>, adjusted: ReadonlyMap<BondId, number>): void {
   let molblock: string;
   try { molblock = molecule.getRdkitMolecule().get_new_coords(); } catch { return; }
   const lines = molblock.split(/\r?\n/);
@@ -470,13 +454,13 @@ function seedFromRdkitDepiction(molecule: Molecule, positions: Map<AtomId, Point
     const x = Number(fields[0]); const y = Number(fields[1]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const sp3Lift = hybridizationOf(molecule, atom) === 'sp3' ? Math.sin((atomNumber(atom) + 1) * 2.17) * 0.24 : 0;
-    positions.set(atom, { x, y, z: sp3Lift });
+    positions.set(atom, new Vector3(x, y, sp3Lift));
   }
   for (const center of heavy) placeHydrogenSeeds(molecule, center, positions, adjusted);
   seedTetrahedralParity(molecule, positions);
 }
 
-function seedTetrahedralParity(molecule: Molecule, positions: Map<AtomId, Point3D>): void {
+function seedTetrahedralParity(molecule: Molecule, positions: Map<AtomId, Vector3>): void {
   for (const center of molecule.atoms()) {
     const stereo = molecule.getAtom(center).stereo;
     if (stereo === undefined) continue;
@@ -484,7 +468,7 @@ function seedTetrahedralParity(molecule: Molecule, positions: Map<AtomId, Point3
     const movable = neighbors.find((atom) => molecule.getAtom(atom).element === 'H')
       ?? neighbors.reduce((best, atom) => molecule.neighborCount(atom) < molecule.neighborCount(best) ? atom : best);
     const point = positions.get(movable)!; const origin = positions.get(center)!;
-    positions.set(movable, { ...point, z: origin.z + orderIndicator(stereo) * 0.82 });
+    positions.set(movable, point.clone().setZ(origin.z + orderIndicator(stereo) * 0.82));
   }
 }
 
@@ -526,38 +510,39 @@ function mapDepictionAtoms(
   return search(0) ? result : undefined;
 }
 
-function placeHydrogenSeeds(molecule: Molecule, center: AtomId, positions: Map<AtomId, Point3D>, adjusted: ReadonlyMap<BondId, number>): void {
+function placeHydrogenSeeds(molecule: Molecule, center: AtomId, positions: Map<AtomId, Vector3>, adjusted: ReadonlyMap<BondId, number>): void {
   const hydrogens = molecule.neighbors(center).filter((atom) => molecule.getAtom(atom).element === 'H');
   if (hydrogens.length === 0) return;
   const origin = positions.get(center)!;
   const heavyDirections = molecule.neighbors(center)
     .filter((atom) => molecule.getAtom(atom).element !== 'H')
-    .map((atom) => unit(sub(positions.get(atom)!, origin)));
-  let away = { x: 0, y: 0, z: 0 };
-  for (const direction of heavyDirections) away = sub(away, direction);
-  if (magnitude(away) < 1e-5) away = perpendicular(heavyDirections[0] ?? { x: 1, y: 0, z: 0 }, atomNumber(center));
-  away = unit(away);
+    .map((atom) => normalized(positions.get(atom)!.clone().sub(origin)));
+  let away = heavyDirections.reduce((result, direction) => result.sub(direction), new Vector3());
+  if (away.length() < 1e-5) away = perpendicular(heavyDirections[0] ?? new Vector3(1, 0, 0), atomNumber(center));
+  away = normalized(away);
   const side = perpendicular(away, atomNumber(center));
-  const otherSide = unit(cross(away, side));
+  const otherSide = new Vector3().crossVectors(away, side).normalize();
   const hybridization = hybridizationOf(molecule, center);
   hydrogens.forEach((hydrogen, index) => {
-    let direction: Point3D;
+    let direction: Vector3;
     if (hydrogens.length === 1) direction = away;
     else if (hybridization === 'sp2') {
       const offset = (index === 0 ? -1 : 1) * Math.PI / 3;
-      direction = unit(add(mul(away, Math.cos(offset)), mul(side, Math.sin(offset))));
+      direction = away.clone().multiplyScalar(Math.cos(offset)).addScaledVector(side, Math.sin(offset)).normalize();
     } else {
       const azimuth = 2 * Math.PI * index / hydrogens.length;
-      const radial = add(mul(side, Math.cos(azimuth)), mul(otherSide, Math.sin(azimuth)));
-      direction = unit(add(mul(away, 0.45), mul(radial, 0.893)));
+      const radial = side.clone().multiplyScalar(Math.cos(azimuth)).addScaledVector(otherSide, Math.sin(azimuth));
+      direction = away.clone().multiplyScalar(0.45).addScaledVector(radial, 0.893).normalize();
     }
-    positions.set(hydrogen, add(origin, mul(direction, lengthOfBond(molecule, center, hydrogen, adjusted))));
+    positions.set(hydrogen, origin.clone().addScaledVector(
+      direction,
+      lengthOfBond(molecule, center, hydrogen, adjusted),
+    ));
   });
 }
 
-interface DistanceConstraint { a: AtomId; b: AtomId; distance: number; strength: number }
-function constraints(molecule: Molecule, adjusted: ReadonlyMap<BondId, number>): DistanceConstraint[] {
-  const result: DistanceConstraint[] = [];
+function constraints(molecule: Molecule, adjusted: ReadonlyMap<BondId, number>): DistanceConstraint<AtomId>[] {
+  const result: DistanceConstraint<AtomId>[] = [];
   for (const id of molecule.bonds()) { const { source, target } = molecule.getBond(id); result.push({ a: source, b: target, distance: lengthOfBond(molecule, source, target, adjusted), strength: adjusted.has(id) ? 1.6 : 1 }); }
   for (const center of molecule.atoms()) {
     const neighbors = molecule.neighbors(center); const cosine = Math.cos(idealBondAngle(molecule, center) * Math.PI / 180);
@@ -578,65 +563,58 @@ export function conjugatedPlanarGroups(molecule: Molecule): AtomId[][] {
   });
 }
 
-function applyDistance(positions: Map<AtomId, Point3D>, item: DistanceConstraint): void {
-  const first = positions.get(item.a)!; const second = positions.get(item.b)!; let delta = sub(second, first); let length = magnitude(delta);
-  if (length < 1e-8) { delta = unit({ x: atomNumber(item.a) + 1, y: atomNumber(item.b) + 2, z: 0.37 }); length = 1; }
-  const correction = mul(delta, (length - item.distance) / length * 0.5 * item.strength);
-  positions.set(item.a, add(first, correction)); positions.set(item.b, sub(second, correction));
+function applyDistance(positions: Map<AtomId, Vector3>, item: DistanceConstraint<AtomId>): void {
+  applyDistanceConstraint(
+    positions,
+    item,
+    new Vector3(atomNumber(item.a) + 1, atomNumber(item.b) + 2, 0.37),
+  );
 }
 
 function applyDistanceToHydrogens(
   molecule: Molecule,
-  positions: Map<AtomId, Point3D>,
-  item: DistanceConstraint,
+  positions: Map<AtomId, Vector3>,
+  item: DistanceConstraint<AtomId>,
 ): void {
   const firstMovable = molecule.getAtom(item.a).element === 'H';
   const secondMovable = molecule.getAtom(item.b).element === 'H';
   if (!firstMovable && !secondMovable) return;
   const first = positions.get(item.a)!; const second = positions.get(item.b)!;
-  let delta = sub(second, first); let length = magnitude(delta);
-  if (length < 1e-8) { delta = unit({ x: atomNumber(item.a) + 1, y: atomNumber(item.b) + 2, z: 0.37 }); length = 1; }
-  const movableCount = Number(firstMovable) + Number(secondMovable);
-  const correction = mul(delta, (length - item.distance) / length * item.strength / movableCount);
-  if (firstMovable) positions.set(item.a, add(first, correction));
-  if (secondMovable) positions.set(item.b, sub(second, correction));
-}
-
-function bestPlane(points: readonly Point3D[]): { center: Point3D; normal: Point3D } {
-  let center = { x: 0, y: 0, z: 0 }; for (const point of points) center = add(center, point); center = mul(center, 1 / points.length);
-  let xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
-  for (const point of points) { const p = sub(point, center); xx += p.x*p.x; xy += p.x*p.y; xz += p.x*p.z; yy += p.y*p.y; yz += p.y*p.z; zz += p.z*p.z; }
-  let normal = unit(cross(sub(points[1]!, points[0]!), sub(points[2]!, points[0]!)));
-  for (let i = 0; i < 12; i += 1) {
-    const scale = Math.max(xx + yy + zz, 1); const old = normal;
-    normal = unit({ x: old.x - (xx*old.x + xy*old.y + xz*old.z)/scale, y: old.y - (xy*old.x + yy*old.y + yz*old.z)/scale, z: old.z - (xz*old.x + yz*old.y + zz*old.z)/scale });
+  let delta = second.clone().sub(first); let length = delta.length();
+  if (length < 1e-8) {
+    delta = normalized(new Vector3(atomNumber(item.a) + 1, atomNumber(item.b) + 2, 0.37));
+    length = 1;
   }
-  return { center, normal };
-}
-
-function flattenGroup(positions: Map<AtomId, Point3D>, group: readonly AtomId[], strength: number): void {
-  const plane = bestPlane(group.map((atom) => positions.get(atom)!));
-  for (const atom of group) { const point = positions.get(atom)!; positions.set(atom, sub(point, mul(plane.normal, dot(sub(point, plane.center), plane.normal) * strength))); }
+  const movableCount = Number(firstMovable) + Number(secondMovable);
+  const correction = delta.multiplyScalar(
+    ((length - item.distance) / length) * item.strength / movableCount,
+  );
+  if (firstMovable) positions.set(item.a, first.clone().add(correction));
+  if (secondMovable) positions.set(item.b, second.clone().sub(correction));
 }
 
 function bondedPairs(molecule: Molecule): Set<string> {
   const result = new Set<string>(); for (const id of molecule.bonds()) { const { source, target } = molecule.getBond(id); result.add(pairKey(source, target)); } return result;
 }
 
-function separateAtoms(molecule: Molecule, positions: Map<AtomId, Point3D>, bonded: ReadonlySet<string>, strength: number): void {
+function separateAtoms(molecule: Molecule, positions: Map<AtomId, Vector3>, bonded: ReadonlySet<string>, strength: number): void {
   const atoms = molecule.atoms();
   for (let i = 0; i < atoms.length; i += 1) for (let j = i + 1; j < atoms.length; j += 1) {
     const a = atoms[i]!; const b = atoms[j]!; if (bonded.has(pairKey(a, b))) continue;
-    const first = positions.get(a)!; const second = positions.get(b)!; let delta = sub(second, first); let distance = magnitude(delta);
+    const first = positions.get(a)!; const second = positions.get(b)!;
+    let delta = second.clone().sub(first); let distance = delta.length();
     const minimum = (COVALENT_RADIUS[molecule.getAtom(a).element] + COVALENT_RADIUS[molecule.getAtom(b).element]) * 0.72;
     if (distance >= minimum) continue;
-    if (distance < 1e-8) { delta = unit({ x: atomNumber(a) + 1, y: atomNumber(b) + 3, z: 0.73 }); distance = 1; }
-    const correction = mul(delta, (minimum - distance) / distance * 0.5 * strength);
-    positions.set(a, sub(first, correction)); positions.set(b, add(second, correction));
+    if (distance < 1e-8) {
+      delta = normalized(new Vector3(atomNumber(a) + 1, atomNumber(b) + 3, 0.73));
+      distance = 1;
+    }
+    const correction = delta.multiplyScalar(((minimum - distance) / distance) * 0.5 * strength);
+    positions.set(a, first.clone().sub(correction)); positions.set(b, second.clone().add(correction));
   }
 }
 
-function separateHydrogens(molecule: Molecule, positions: Map<AtomId, Point3D>, bonded: ReadonlySet<string>, strength: number): void {
+function separateHydrogens(molecule: Molecule, positions: Map<AtomId, Vector3>, bonded: ReadonlySet<string>, strength: number): void {
   const atoms = molecule.atoms();
   for (let i = 0; i < atoms.length; i += 1) for (let j = i + 1; j < atoms.length; j += 1) {
     const a = atoms[i]!; const b = atoms[j]!;
@@ -645,61 +623,64 @@ function separateHydrogens(molecule: Molecule, positions: Map<AtomId, Point3D>, 
     const bMovable = molecule.getAtom(b).element === 'H';
     if (!aMovable && !bMovable) continue;
     const first = positions.get(a)!; const second = positions.get(b)!;
-    let delta = sub(second, first); let distance = magnitude(delta);
+    let delta = second.clone().sub(first); let distance = delta.length();
     const minimum = (COVALENT_RADIUS[molecule.getAtom(a).element] + COVALENT_RADIUS[molecule.getAtom(b).element]) * 0.72;
     if (distance >= minimum) continue;
-    if (distance < 1e-8) { delta = unit({ x: atomNumber(a) + 1, y: atomNumber(b) + 3, z: 0.73 }); distance = 1; }
+    if (distance < 1e-8) {
+      delta = normalized(new Vector3(atomNumber(a) + 1, atomNumber(b) + 3, 0.73));
+      distance = 1;
+    }
     const movableCount = Number(aMovable) + Number(bMovable);
-    const correction = mul(delta, (minimum - distance) / distance * strength / movableCount);
-    if (aMovable) positions.set(a, sub(first, correction));
-    if (bMovable) positions.set(b, add(second, correction));
+    const correction = delta.multiplyScalar(((minimum - distance) / distance) * strength / movableCount);
+    if (aMovable) positions.set(a, first.clone().sub(correction));
+    if (bMovable) positions.set(b, second.clone().add(correction));
   }
 }
 
-interface SegmentDistance { distance: number; firstT: number; secondT: number; delta: Point3D }
-function segmentDistance(a0: Point3D, a1: Point3D, b0: Point3D, b1: Point3D): SegmentDistance {
-  const u = sub(a1, a0); const v = sub(b1, b0); const w = sub(a0, b0);
-  const aa = dot(u,u); const bb = dot(u,v); const cc = dot(v,v); const dd = dot(u,w); const ee = dot(v,w); const denominator = aa*cc - bb*bb;
-  let s = denominator < 1e-10 ? 0.5 : (bb*ee - cc*dd)/denominator; let t = denominator < 1e-10 ? 0.5 : (aa*ee - bb*dd)/denominator;
-  s = Math.max(0, Math.min(1, s)); t = Math.max(0, Math.min(1, t)); s = Math.max(0, Math.min(1, (bb*t-dd)/Math.max(aa,1e-10))); t = Math.max(0, Math.min(1, (bb*s+ee)/Math.max(cc,1e-10)));
-  const delta = sub(add(a0,mul(u,s)), add(b0,mul(v,t))); return { distance: magnitude(delta), firstT: s, secondT: t, delta };
-}
-
-function separateCrossings(molecule: Molecule, positions: Map<AtomId, Point3D>, strength: number): void {
+function separateCrossings(molecule: Molecule, positions: Map<AtomId, Vector3>, strength: number): void {
   const bonds = molecule.bonds().map((id) => molecule.getBond(id));
   for (let i = 0; i < bonds.length; i += 1) for (let j = i + 1; j < bonds.length; j += 1) {
     const first = bonds[i]!; const second = bonds[j]!; if ([first.source, first.target].some((atom) => atom === second.source || atom === second.target)) continue;
     const closest = segmentDistance(positions.get(first.source)!, positions.get(first.target)!, positions.get(second.source)!, positions.get(second.target)!); const minimum = 0.16;
     if (closest.distance >= minimum) continue;
-    let direction = unit(closest.delta);
-    if (closest.distance < 1e-7) { const firstAxis = sub(positions.get(first.target)!, positions.get(first.source)!); const secondAxis = sub(positions.get(second.target)!, positions.get(second.source)!); direction = magnitude(cross(firstAxis, secondAxis)) < 1e-7 ? perpendicular(firstAxis, i+j) : unit(cross(firstAxis, secondAxis)); }
-    const shift = mul(direction, (minimum-closest.distance)*0.5*strength);
-    positions.set(first.source, add(positions.get(first.source)!,mul(shift,1-closest.firstT))); positions.set(first.target, add(positions.get(first.target)!,mul(shift,closest.firstT)));
-    positions.set(second.source, sub(positions.get(second.source)!,mul(shift,1-closest.secondT))); positions.set(second.target, sub(positions.get(second.target)!,mul(shift,closest.secondT)));
+    let direction = normalized(closest.delta);
+    if (closest.distance < 1e-7) {
+      const firstAxis = positions.get(first.target)!.clone().sub(positions.get(first.source)!);
+      const secondAxis = positions.get(second.target)!.clone().sub(positions.get(second.source)!);
+      const normal = new Vector3().crossVectors(firstAxis, secondAxis);
+      direction = normal.length() < 1e-7 ? perpendicular(firstAxis, i + j) : normal.normalize();
+    }
+    const shift = direction.multiplyScalar((minimum - closest.distance) * 0.5 * strength);
+    positions.set(first.source, positions.get(first.source)!.clone().addScaledVector(shift, 1 - closest.firstT));
+    positions.set(first.target, positions.get(first.target)!.clone().addScaledVector(shift, closest.firstT));
+    positions.set(second.source, positions.get(second.source)!.clone().addScaledVector(shift, -(1 - closest.secondT)));
+    positions.set(second.target, positions.get(second.target)!.clone().addScaledVector(shift, -closest.secondT));
   }
 }
 
-function separateAtomBonds(molecule: Molecule, positions: Map<AtomId, Point3D>, strength: number): void {
+function separateAtomBonds(molecule: Molecule, positions: Map<AtomId, Vector3>, strength: number): void {
   const bonds = molecule.bonds().map((id) => molecule.getBond(id));
   for (const atom of molecule.atoms()) for (const bond of bonds) {
     if (bond.source === atom || bond.target === atom) continue;
     const closest = segmentDistance(positions.get(atom)!, positions.get(atom)!, positions.get(bond.source)!, positions.get(bond.target)!);
     const minimum = COVALENT_RADIUS[molecule.getAtom(atom).element] * 0.48 + 0.06;
     if (closest.distance >= minimum) continue;
-    const bondAxis = sub(positions.get(bond.target)!, positions.get(bond.source)!);
-    const direction = closest.distance < 1e-7 ? perpendicular(bondAxis, atomNumber(atom)) : unit(closest.delta);
-    const shift = mul(direction, (minimum - closest.distance) * 0.5 * strength);
-    positions.set(atom, add(positions.get(atom)!, shift));
-    positions.set(bond.source, sub(positions.get(bond.source)!, mul(shift, 1 - closest.secondT)));
-    positions.set(bond.target, sub(positions.get(bond.target)!, mul(shift, closest.secondT)));
+    const bondAxis = positions.get(bond.target)!.clone().sub(positions.get(bond.source)!);
+    const direction = closest.distance < 1e-7
+      ? perpendicular(bondAxis, atomNumber(atom))
+      : normalized(closest.delta);
+    const shift = direction.multiplyScalar((minimum - closest.distance) * 0.5 * strength);
+    positions.set(atom, positions.get(atom)!.clone().add(shift));
+    positions.set(bond.source, positions.get(bond.source)!.clone().addScaledVector(shift, -(1 - closest.secondT)));
+    positions.set(bond.target, positions.get(bond.target)!.clone().addScaledVector(shift, -closest.secondT));
   }
 }
 
-function optimize(molecule: Molecule, positions: Map<AtomId, Point3D>, adjusted: ReadonlyMap<BondId, number>): void {
+function optimize(molecule: Molecule, positions: Map<AtomId, Vector3>, adjusted: ReadonlyMap<BondId, number>): void {
   const rules = constraints(molecule, adjusted); const planes = conjugatedPlanarGroups(molecule); const bonded = bondedPairs(molecule); const iterations = molecule.atomCount < 40 ? 900 : 600;
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     if (iteration % 2 === 0) for (const rule of rules) applyDistance(positions, rule); else for (let i = rules.length-1; i >= 0; i -= 1) applyDistance(positions,rules[i]!);
-    for (const plane of planes) flattenGroup(positions,plane,0.72);
+    for (const plane of planes) flattenPointMap(positions, plane, 0.72);
     separateAtoms(molecule,positions,bonded,0.5);
     if (iteration % 3 === 0) {
       if (iteration > iterations / 2 && iteration % 6 === 0) separateAtomBonds(molecule,positions,0.2);
@@ -715,7 +696,7 @@ function optimize(molecule: Molecule, positions: Map<AtomId, Point3D>, adjusted:
     const heavyPlanes = planes.map((plane) => plane.filter((atom) => molecule.getAtom(atom).element !== 'H'));
     for (let iteration = 0; iteration < 300; iteration += 1) {
       for (const rule of heavyRules) applyDistance(positions, { ...rule, strength: rule.strength * 0.72 });
-      for (const plane of heavyPlanes) flattenGroup(positions, plane, 1);
+      for (const plane of heavyPlanes) flattenPointMap(positions, plane, 1);
       if (iteration % 3 === 0) separateAtoms(molecule, positions, bonded, 0.18);
       if (iteration % 6 === 0) separateCrossings(molecule, positions, 0.2);
     }
@@ -727,34 +708,26 @@ function optimize(molecule: Molecule, positions: Map<AtomId, Point3D>, adjusted:
       for (const rule of hydrogenRules) applyDistanceToHydrogens(molecule, positions, { ...rule, strength: rule.strength * 0.55 });
       separateHydrogens(molecule, positions, bonded, 0.35);
     }
-    for (const plane of planes) flattenGroup(positions, plane, 1);
+    for (const plane of planes) flattenPointMap(positions, plane, 1);
     separateHydrogens(molecule, positions, bonded, 1);
   } else {
-    for (let iteration = 0; iteration < 100; iteration += 1) { for (const rule of rules) applyDistance(positions,{...rule,strength:rule.strength*0.7}); for (const plane of planes) flattenGroup(positions,plane,1); }
+    for (let iteration = 0; iteration < 100; iteration += 1) { for (const rule of rules) applyDistance(positions,{...rule,strength:rule.strength*0.7}); for (const plane of planes) flattenPointMap(positions, plane, 1); }
   }
-}
-
-function centerPositions(positions: Map<AtomId, Point3D>): void {
-  if (positions.size === 0) return; let center = { x: 0, y: 0, z: 0 }; for (const point of positions.values()) center = add(center,point); center = mul(center,1/positions.size); for (const [atom,point] of positions) positions.set(atom,sub(point,center));
 }
 
 /** Deterministic constrained display conformer (not a quantum/force-field optimization). */
 export function generateMoleculeGeometry(molecule: Molecule): MoleculeGeometry {
   const adjusted = resonanceAdjustedBondLengths(molecule);
-  const positions = seedPositions(molecule, adjusted); optimize(molecule,positions,adjusted); centerPositions(positions); return { positions };
-}
-
-function angle(a: Point3D, center: Point3D, b: Point3D): number {
-  const first=sub(a,center), second=sub(b,center); return Math.acos(Math.max(-1,Math.min(1,dot(first,second)/(magnitude(first)*magnitude(second)))))*180/Math.PI;
+  const positions = seedPositions(molecule, adjusted); optimize(molecule,positions,adjusted); centerPointMap(positions); return { positions };
 }
 
 /** Validate bond lengths, local geometry, conjugated planes and intersections. */
 export function geometryIssues(molecule: Molecule, geometry: MoleculeGeometry): GeometryIssue[] {
   const issues: GeometryIssue[]=[]; const {positions}=geometry; const adjusted=resonanceAdjustedBondLengths(molecule);
-  for (const id of molecule.bonds()) { const {source,target}=molecule.getBond(id); const actual=magnitude(sub(positions.get(source)!,positions.get(target)!)); const expected=lengthOfBond(molecule,source,target,adjusted); if(Math.abs(actual-expected)>0.08) issues.push({kind:'bond-length',atoms:[source,target],actual,expected}); }
-  for (const center of molecule.atoms()) { const neighbors=molecule.neighbors(center); if(neighbors.length<2||molecule.getAtom(center).element==='H') continue; const expected=idealBondAngle(molecule,center); for(let i=0;i<neighbors.length;i+=1) for(let j=i+1;j<neighbors.length;j+=1){const actual=angle(positions.get(neighbors[i]!)!,positions.get(center)!,positions.get(neighbors[j]!)!); if(Math.abs(actual-expected)>(expected===180?12:20)) issues.push({kind:'bond-angle',atoms:[neighbors[i]!,center,neighbors[j]!],actual,expected});}}
-  for(const group of conjugatedPlanarGroups(molecule)){const plane=bestPlane(group.map((atom)=>positions.get(atom)!)); for(const atom of group){const actual=Math.abs(dot(sub(positions.get(atom)!,plane.center),plane.normal)); if(actual>0.08) issues.push({kind:'planarity',atoms:[atom],actual,expected:0});}}
-  const bonded=bondedPairs(molecule); const atoms=molecule.atoms(); for(let i=0;i<atoms.length;i+=1) for(let j=i+1;j<atoms.length;j+=1){const a=atoms[i]!,b=atoms[j]!; if(bonded.has(pairKey(a,b)))continue; const actual=magnitude(sub(positions.get(a)!,positions.get(b)!)); const expected=(COVALENT_RADIUS[molecule.getAtom(a).element]+COVALENT_RADIUS[molecule.getAtom(b).element])*0.64; if(actual<expected)issues.push({kind:'atom-overlap',atoms:[a,b],actual,expected});}
+  for (const id of molecule.bonds()) { const {source,target}=molecule.getBond(id); const actual=positions.get(source)!.distanceTo(positions.get(target)!); const expected=lengthOfBond(molecule,source,target,adjusted); if(Math.abs(actual-expected)>0.08) issues.push({kind:'bond-length',atoms:[source,target],actual,expected}); }
+  for (const center of molecule.atoms()) { const neighbors=molecule.neighbors(center); if(neighbors.length<2||molecule.getAtom(center).element==='H') continue; const expected=idealBondAngle(molecule,center); for(let i=0;i<neighbors.length;i+=1) for(let j=i+1;j<neighbors.length;j+=1){const actual=angleDegrees(positions.get(neighbors[i]!)!,positions.get(center)!,positions.get(neighbors[j]!)!); if(Math.abs(actual-expected)>(expected===180?12:20)) issues.push({kind:'bond-angle',atoms:[neighbors[i]!,center,neighbors[j]!],actual,expected});}}
+  for(const group of conjugatedPlanarGroups(molecule)){const plane=bestFitPlane(group.map((atom)=>positions.get(atom)!)); for(const atom of group){const actual=Math.abs(positions.get(atom)!.clone().sub(plane.center).dot(plane.normal)); if(actual>0.08) issues.push({kind:'planarity',atoms:[atom],actual,expected:0});}}
+  const bonded=bondedPairs(molecule); const atoms=molecule.atoms(); for(let i=0;i<atoms.length;i+=1) for(let j=i+1;j<atoms.length;j+=1){const a=atoms[i]!,b=atoms[j]!; if(bonded.has(pairKey(a,b)))continue; const actual=positions.get(a)!.distanceTo(positions.get(b)!); const expected=(COVALENT_RADIUS[molecule.getAtom(a).element]+COVALENT_RADIUS[molecule.getAtom(b).element])*0.64; if(actual<expected)issues.push({kind:'atom-overlap',atoms:[a,b],actual,expected});}
   const bonds=molecule.bonds().map((id)=>molecule.getBond(id)); for(let i=0;i<bonds.length;i+=1) for(let j=i+1;j<bonds.length;j+=1){const a=bonds[i]!,b=bonds[j]!;if([a.source,a.target].some((atom)=>atom===b.source||atom===b.target))continue;const actual=segmentDistance(positions.get(a.source)!,positions.get(a.target)!,positions.get(b.source)!,positions.get(b.target)!).distance;if(actual<0.1)issues.push({kind:'bond-crossing',atoms:[a.source,a.target,b.source,b.target],actual,expected:0.1});}
   for(const atom of atoms)for(const bond of bonds){if(bond.source===atom||bond.target===atom)continue;const actual=segmentDistance(positions.get(atom)!,positions.get(atom)!,positions.get(bond.source)!,positions.get(bond.target)!).distance;const expected=COVALENT_RADIUS[molecule.getAtom(atom).element]*0.48+0.06;if(actual<expected)issues.push({kind:'atom-bond',atoms:[atom,bond.source,bond.target],actual,expected});}
   return issues;

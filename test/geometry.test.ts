@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Vector3 } from 'three';
 import {
   conjugatedPiSystems,
   displayedLonePairCount,
@@ -13,36 +14,8 @@ import {
   resonanceAdjustedBondLengths,
 } from '../src/chem';
 import { DEMO_SOURCES } from '../src/demo-sources';
-import type { AtomId, Molecule, Point3D } from '../src/chem';
-
-function subtract(a: Point3D, b: Point3D): Point3D {
-  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
-}
-
-function dot(a: Point3D, b: Point3D): number {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-function length(v: Point3D): number {
-  return Math.hypot(v.x, v.y, v.z);
-}
-
-function signedVolume(a: Point3D, b: Point3D, c: Point3D, d: Point3D): number {
-  const first = subtract(b, a);
-  const second = subtract(c, a);
-  const third = subtract(d, a);
-  return dot(first, {
-    x: second.y * third.z - second.z * third.y,
-    y: second.z * third.x - second.x * third.z,
-    z: second.x * third.y - second.y * third.x,
-  });
-}
-
-function angleDegrees(a: Point3D, center: Point3D, b: Point3D): number {
-  const first = subtract(a, center);
-  const second = subtract(b, center);
-  return (Math.acos(dot(first, second) / (length(first) * length(second))) * 180) / Math.PI;
-}
+import type { AtomId, Molecule } from '../src/chem';
+import { angleDegrees, signedTetrahedralVolume } from '../src/math';
 
 function atomOf(molecule: Molecule, element: 'C' | 'H' | 'O' | 'N'): AtomId {
   return molecule.atoms().find((atom) => molecule.getAtom(atom).element === element)!;
@@ -60,7 +33,7 @@ describe('topology-derived 3D molecular geometry', () => {
     }
     for (const id of molecule.bonds()) {
       const bond = molecule.getBond(id);
-      const actual = length(subtract(positions.get(bond.source)!, positions.get(bond.target)!));
+      const actual = positions.get(bond.source)!.distanceTo(positions.get(bond.target)!);
       const target = idealBondLength(
         molecule.getAtom(bond.source).element,
         molecule.getAtom(bond.target).element,
@@ -85,7 +58,7 @@ describe('topology-derived 3D molecular geometry', () => {
     const carbon = atomOf(molecule, 'C');
     const hydrogens = molecule.neighbors(carbon);
     const { positions } = generateMoleculeGeometry(molecule);
-    const volume = signedVolume(
+    const volume = signedTetrahedralVolume(
       positions.get(hydrogens[0]!)!,
       positions.get(hydrogens[1]!)!,
       positions.get(hydrogens[2]!)!,
@@ -103,7 +76,7 @@ describe('topology-derived 3D molecular geometry', () => {
       // is the spatial arrangement of these fixed neighbours that must flip.
       const neighbors = molecule.neighbors(center).sort((a, b) => a.localeCompare(b));
       const { positions } = generateMoleculeGeometry(molecule);
-      return signedVolume(
+      return signedTetrahedralVolume(
         positions.get(neighbors[0]!)!,
         positions.get(neighbors[1]!)!,
         positions.get(neighbors[2]!)!,
@@ -124,18 +97,13 @@ describe('topology-derived 3D molecular geometry', () => {
       const sourceSubstituent = molecule.neighbors(source).find((atom) => atom !== target && molecule.getAtom(atom).element !== 'H')!;
       const targetSubstituent = molecule.neighbors(target).find((atom) => atom !== source && molecule.getAtom(atom).element !== 'H')!;
       const { positions } = generateMoleculeGeometry(molecule);
-      const axis = subtract(positions.get(target)!, positions.get(source)!);
-      const axisLengthSquared = dot(axis, axis);
+      const axis = positions.get(target)!.clone().sub(positions.get(source)!);
+      const axisLengthSquared = axis.lengthSq();
       const side = (center: AtomId, substituent: AtomId) => {
-        const raw = subtract(positions.get(substituent)!, positions.get(center)!);
-        const projection = {
-          x: axis.x * dot(raw, axis) / axisLengthSquared,
-          y: axis.y * dot(raw, axis) / axisLengthSquared,
-          z: axis.z * dot(raw, axis) / axisLengthSquared,
-        };
-        return subtract(raw, projection);
+        const raw = positions.get(substituent)!.clone().sub(positions.get(center)!);
+        return raw.clone().addScaledVector(axis, -raw.dot(axis) / axisLengthSquared);
       };
-      expect(Math.sign(dot(side(source, sourceSubstituent), side(target, targetSubstituent)))).toBe(expectedSign);
+      expect(Math.sign(side(source, sourceSubstituent).dot(side(target, targetSubstituent)))).toBe(expectedSign);
     }
   });
 
@@ -153,7 +121,7 @@ describe('topology-derived 3D molecular geometry', () => {
     const lengths = molecule.bonds()
       .map((bond) => molecule.getBond(bond))
       .filter(({ source, target }) => carbons.includes(source) && carbons.includes(target))
-      .map(({ source, target }) => length(subtract(positions.get(source)!, positions.get(target)!)));
+      .map(({ source, target }) => positions.get(source)!.distanceTo(positions.get(target)!));
     expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThan(0.03);
     expect(lengths[0]).toBeCloseTo((1.54 + 1.34) / 2, 1);
     for (const carbon of carbons) {
@@ -176,7 +144,7 @@ describe('topology-derived 3D molecular geometry', () => {
     const positions = generateMoleculeGeometry(molecule).positions;
     const lengths = aromaticCarbonBonds.map(([bondId]) => {
       const { source, target } = molecule.getBond(bondId);
-      return length(subtract(positions.get(source)!, positions.get(target)!));
+      return positions.get(source)!.distanceTo(positions.get(target)!);
     });
     expect(Math.max(...lengths) - Math.min(...lengths)).toBeLessThan(0.05);
   });
@@ -187,11 +155,11 @@ describe('topology-derived 3D molecular geometry', () => {
     const system = conjugatedPiSystems(molecule).find((candidate) => candidate.atoms.length === 2)!;
     const [first, second] = system.atoms;
     const substituent = molecule.neighbors(first!).find((atom) => atom !== second)!;
-    const axis = subtract(geometry.positions.get(second!)!, geometry.positions.get(first!)!);
-    const side = subtract(geometry.positions.get(substituent)!, geometry.positions.get(first!)!);
+    const axis = geometry.positions.get(second!)!.clone().sub(geometry.positions.get(first!)!);
+    const side = geometry.positions.get(substituent)!.clone().sub(geometry.positions.get(first!)!);
     const normal = piSystemNormal(molecule, system.atoms, geometry.positions);
-    expect(Math.abs(dot(normal, axis) / length(axis))).toBeLessThan(1e-6);
-    expect(Math.abs(dot(normal, side) / length(side))).toBeLessThan(1e-6);
+    expect(Math.abs(normal.dot(axis) / axis.length())).toBeLessThan(1e-6);
+    expect(Math.abs(normal.dot(side) / side.length())).toBeLessThan(1e-6);
   });
 
   it.each(['C#C', 'C=CC#CC=C'])('keeps the two triple-bond pi systems orthogonal in %s', (smiles) => {
@@ -203,7 +171,7 @@ describe('topology-derived 3D molecular geometry', () => {
       system.atoms.includes(triple.source) && system.atoms.includes(triple.target));
     expect(sharing).toHaveLength(2);
     const normals = piSystemNormals(molecule, systems, geometry.positions);
-    expect(Math.abs(dot(normals[sharing[0]!.index]!, normals[sharing[1]!.index]!))).toBeLessThan(1e-6);
+    expect(Math.abs(normals[sharing[0]!.index]!.dot(normals[sharing[1]!.index]!))).toBeLessThan(1e-6);
   });
 
   it('keeps acetic acid C-O bonds distinct but equalizes acetate', () => {
@@ -214,7 +182,7 @@ describe('topology-derived 3D molecular geometry', () => {
         && molecule.neighbors(atom).filter((neighbor) => molecule.getAtom(neighbor).element === 'O').length === 2)!;
       return molecule.neighbors(carbon)
         .filter((atom) => molecule.getAtom(atom).element === 'O')
-        .map((oxygen) => length(subtract(positions.get(carbon)!, positions.get(oxygen)!)));
+        .map((oxygen) => positions.get(carbon)!.distanceTo(positions.get(oxygen)!));
     };
     const acid = oxygenBondLengths('CC(=O)O');
     const acetate = oxygenBondLengths('CC(=O)[O-]');
@@ -226,17 +194,19 @@ describe('topology-derived 3D molecular geometry', () => {
     const molecule = parseSmiles('O');
     const oxygen = atomOf(molecule, 'O');
     const geometry = generateMoleculeGeometry(molecule);
-    const bondDirections = molecule.neighbors(oxygen).map((hydrogen) => subtract(geometry.positions.get(hydrogen)!, geometry.positions.get(oxygen)!));
+    const bondDirections = molecule.neighbors(oxygen).map((hydrogen) => (
+      geometry.positions.get(hydrogen)!.clone().sub(geometry.positions.get(oxygen)!)
+    ));
     const pairs = lonePairDirections(molecule, oxygen, geometry.positions);
     expect(displayedLonePairCount(molecule, oxygen)).toBe(2);
     expect(pairs).toHaveLength(2);
     const domains = [...bondDirections, ...pairs];
     for (let first = 0; first < domains.length; first += 1) for (let second = first + 1; second < domains.length; second += 1) {
-      const angle = Math.acos(dot(domains[first]!, domains[second]!) / (length(domains[first]!) * length(domains[second]!))) * 180 / Math.PI;
+      const angle = domains[first]!.angleTo(domains[second]!) * 180 / Math.PI;
       expect(angle).toBeGreaterThan(100);
       expect(angle).toBeLessThan(116);
     }
-    expect(Math.abs(signedVolume({ x: 0, y: 0, z: 0 }, ...domains.slice(0, 3) as [Point3D, Point3D, Point3D]))).toBeGreaterThan(0.1);
+    expect(Math.abs(signedTetrahedralVolume(new Vector3(), ...domains.slice(0, 3) as [Vector3, Vector3, Vector3]))).toBeGreaterThan(0.1);
   });
 
   it('moves a donor lone pair into the pi system but retains double-bonded O lone pairs', () => {
@@ -248,10 +218,10 @@ describe('topology-derived 3D molecular geometry', () => {
     const oxygen = atomOf(formaldehyde, 'O');
     const geometry = generateMoleculeGeometry(formaldehyde);
     const pairs = lonePairDirections(formaldehyde, oxygen, geometry.positions);
-    const bond = subtract(geometry.positions.get(formaldehyde.neighbors(oxygen)[0]!)!, geometry.positions.get(oxygen)!);
+    const bond = geometry.positions.get(formaldehyde.neighbors(oxygen)[0]!)!.clone().sub(geometry.positions.get(oxygen)!);
     expect(displayedLonePairCount(formaldehyde, oxygen)).toBe(2);
-    expect(angleDegrees(pairs[0]!, { x: 0, y: 0, z: 0 }, bond)).toBeCloseTo(120, 5);
-    expect(angleDegrees(pairs[1]!, { x: 0, y: 0, z: 0 }, bond)).toBeCloseTo(120, 5);
+    expect(angleDegrees(pairs[0]!, new Vector3(), bond)).toBeCloseTo(120, 5);
+    expect(angleDegrees(pairs[1]!, new Vector3(), bond)).toBeCloseTo(120, 5);
 
     const adenine = parseSmiles('Nc1ncnc2[nH]cnc12');
     const donorNitrogens = adenine.atoms().filter((atom) => adenine.getAtom(atom).element === 'N'

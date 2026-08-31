@@ -143,7 +143,7 @@ npm run build # typecheck + production build into dist/
 
 ## Design notes and next steps
 
-- The world and chemistry engines are framework-free (no DOM, no game engine),
+- The world engine is framework-free; chemistry is DOM- and Phaser-free and uses Three.js only for its standalone `Vector3` math type,
   so they run in Node tests and stay portable. The game shell runs on
   **Phaser 4** (installed 2026-08-28). Chemical-source panels embed a Three.js
   molecule viewer with drag/zoom controls, ball-and-stick and space-filling
