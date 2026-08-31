@@ -95,7 +95,7 @@ function permutations4(): [number, number, number, number][] {
 }
 
 /** The reference label under the fixed counterclockwise convention. */
-const LABEL: TetrahedralStereo = { bonds: [BONDS[0]!, BONDS[1]!, BONDS[2]!, BONDS[3]!] };
+const LABEL: TetrahedralStereo = [BONDS[0]!, BONDS[1]!, BONDS[2]!, BONDS[3]!];
 
 describe('tetrahedral order conversion', () => {
   it('directionFromBond matches the geometric winding for all 24 viewpoints/orders', () => {
@@ -141,19 +141,13 @@ describe('tetrahedral order conversion', () => {
   it('sameTetrahedron: even permutations are the same arrangement, odd ones are mirror images', () => {
     for (const [i, j, k, l] of permutations4()) {
       const order = [`e${i}`, `e${j}`, `e${k}`, `e${l}`] as [string, string, string, string];
-      const same = sameTetrahedron(LABEL, { bonds: order });
+      const same = sameTetrahedron(LABEL, order);
       // Two specified orders are the same arrangement iff they share the order
       // indicator, which (per the geometry) is exactly when the geometric sense
       // at that (viewpoint, order) is counterclockwise - the fixed convention.
-      expect(same, order.join(',')).toBe(orderIndicator(order) === orderIndicator(LABEL.bonds!));
+      expect(same, order.join(',')).toBe(orderIndicator(order) === orderIndicator(LABEL));
       expect(same, order.join(',')).toBe(geometricSense(i, [j, k, l]) === 'counterclockwise');
     }
   });
 
-  it('unspecified labels: equal to each other, never equal to a specified label', () => {
-    expect(sameTetrahedron({}, {})).toBe(true);
-    expect(sameTetrahedron({}, LABEL)).toBe(false);
-    expect(sameTetrahedron(LABEL, {})).toBe(false);
-    expect(() => directionFromBond({}, 'e0', ['e1', 'e2', 'e3'])).toThrow();
-  });
 });

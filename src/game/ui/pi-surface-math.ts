@@ -1,0 +1,45 @@
+/** Scalar-field constants shared by all merged π surfaces. */
+export const PI_SURFACE_ISOLATION = 50;
+export const PI_SURFACE_SUBTRACT = 12;
+/** Keep marching-cubes cells no wider than this many ångströms. */
+export const PI_SURFACE_MAX_GRID_SPACING = 0.25;
+export const PI_SURFACE_MIN_RESOLUTION = 28;
+/** Guard against unbounded cubic allocations for user-created macromolecules. */
+export const PI_SURFACE_MAX_RESOLUTION = 160;
+
+/** Opposite phases barely meet when each center is one lobe radius away. */
+export function piLobeOffset(radius: number): number {
+  return radius;
+}
+
+/**
+ * Full positive support of a Three.js MarchingCubes metaball.
+ * This is larger than the requested isosurface radius and must fit inside the
+ * field cube or the generated mesh will be cut off at its bounds.
+ */
+export function metaballSupportRadius(
+  radius: number,
+  isolation = PI_SURFACE_ISOLATION,
+  subtract = PI_SURFACE_SUBTRACT,
+): number {
+  return radius * Math.sqrt((isolation + subtract) / subtract);
+}
+
+/**
+ * Choose the cubic field resolution from physical size, rather than assigning
+ * every molecule the same number of cells. Long polyenes therefore retain the
+ * same surface detail as compact aromatic systems.
+ */
+export function piSurfaceResolution(
+  extent: number,
+  maxGridSpacing = PI_SURFACE_MAX_GRID_SPACING,
+): number {
+  if (!Number.isFinite(extent) || extent <= 0) throw new RangeError('Pi-surface extent must be positive and finite.');
+  if (!Number.isFinite(maxGridSpacing) || maxGridSpacing <= 0) {
+    throw new RangeError('Pi-surface grid spacing must be positive and finite.');
+  }
+  return Math.min(
+    PI_SURFACE_MAX_RESOLUTION,
+    Math.max(PI_SURFACE_MIN_RESOLUTION, Math.ceil(extent / maxGridSpacing)),
+  );
+}

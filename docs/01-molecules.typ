@@ -164,7 +164,7 @@ Electronegativity is a fancy word for "greediness for shared electrons". Some at
 - Cardinium and Habitium are evenly matched, so a #ch("C--H") bond is *neutral*: the electrons sit in the middle.
 - Obligium is greedier. In a #ch("C--O") or #ch("O--H") bond, the shared electrons spend more time near the Obligium. The Obligium becomes slightly negative and its partner slightly positive.
 
-These slight, fractional charges are called *partial charges*. They are computed for every atom of every molecule and shown in the inspector. Partial charges mark the *hot spots* of a molecule: the electron-rich (δ−) and electron-poor (δ+) places where reactions like to start.
+These slight, fractional charges are called *partial charges*. They are computed from the molecular graph for every atom and shown directly on the inspector's 3D model in its *Charge* layer: electron-rich atoms fade toward blue (δ−), while electron-poor atoms fade toward red (δ+). Partial charges mark the *hot spots* of a molecule — the places where reactions like to start.
 
 #molfig(
   skeletize({
@@ -183,7 +183,7 @@ Polarity is not decoration: it decides how molecules interact with solvents (Par
 
 == Lone pairs <sec:lone-pairs>
 
-Some electrons are not used for bonds at all: they sit on a single atom as a *lone pair*. Obligium carries two, Naturium one. A lone pair makes its atom electron-rich and "donor-like" — a natural place where electron-hungry partners like to attach. Whenever you see a molecule with an Obligium or Naturium, expect the interesting chemistry to happen near it.
+Some electrons are not used for bonds at all: they sit on a single atom as a *lone pair*. Obligium carries two, Naturium one. A lone pair makes its atom electron-rich and "donor-like" — a natural place where electron-hungry partners like to attach. Whenever you see a molecule with an Obligium or Naturium, expect the interesting chemistry to happen near it. In a conjugated molecule a donating lone pair can become part of the shared π cloud; the 3D inspector then shows it in that cloud instead of drawing the same pair twice as a localized lobe.
 
 == Shape and stereochemistry <sec:stereochemistry>
 
@@ -279,7 +279,7 @@ In drawings, a solid wedge means "coming toward you", a dashed wedge means "goin
   [But-2-ene exists as cis (left, both methyls on the same side) and trans (right, on opposite sides). The double bond cannot spin, so they stay different.],
 )
 
-How does the game keep track of all this? On top of the molecular graph it stores one small label per chiral center and per double bond — just a sign that records which way the pieces are arranged, relative to a fixed, canonical ordering of the neighbours. Two drawings of the same molecule always produce the same label, so the labels are as reliable as the graph itself. They are enough to name R and S differently, keep cis and trans apart on belts, and never accidentally merge two different substances.
+How does the game keep track of all this? On top of the molecular graph it stores a small local bond-order label at each chiral center and a same-side pair of substituent bonds at each specified double bond. From that pair, any two groups across the double bond are cis when both are selected or both are unselected, and trans when only one is selected. No group has to be called the “largest,” so this also works when neither side is Habitium and when a long molecule contains many locked double bonds. Two drawings of the same molecule still produce the same canonical name. These labels are enough to name R and S differently, keep cis and trans apart on belts, and never accidentally merge two different substances.
 
 A useful rule of thumb for the factory floor: *enantiomers* (an R/S pair) have identical energies and solubilities — in this universe they behave exactly alike, they are just different objects. *Diastereomers* (cis/trans, E/Z) differ in polarity, stability and solubility — exactly the kind of difference your belts and solvents can exploit.
 

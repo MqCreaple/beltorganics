@@ -135,18 +135,21 @@ npm run build # typecheck + production build into dist/
   `scene.ts` (the scene: grid/blocks rendering, input, HUD), `game.ts`
   (wraps the Phaser.Game and shares the world).
 - `src/game/ui/` — Preact/TSX UI: `block-panel.tsx` (the centered HUD overlay
-  and its open/close), `molecule-panel.tsx` (structure-diagram SVG viewer for
-  a substance), `source-block-ui.tsx` (builds the `BlockUI` for sources).
+  and its open/close), `molecule-panel.tsx` (substance metadata),
+  `molecule-viewer-3d.tsx` (interactive 3D representations and property layers), `source-block-ui.tsx`
+  (builds the `BlockUI` for sources).
 - `src/main.ts` — web entry; creates the game (Phaser canvas) in `#app`, a
   demo world with a few chemical sources, and starts it.
 
 ## Design notes and next steps
 
-- The world and chemistry engines are framework-free (no DOM, no game engine),
+- The world engine is framework-free; chemistry is DOM- and Phaser-free and uses Three.js only for its standalone `Vector3` math type,
   so they run in Node tests and stay portable. The game shell runs on
-  **Phaser 4** (installed 2026-08-28). The structure-diagram SVG already
-  renders in the block panels (RDKit via the registry); a 3D molecule view
-  in Phaser can come later, fed by the same registry.
+  **Phaser 4** (installed 2026-08-28). Chemical-source panels embed a Three.js
+  molecule viewer with drag/zoom controls, ball-and-stick and space-filling
+  representations, plus Structure, Hybridization, Charge, qualitative Electron
+  cloud (bonds, VSEPR lone pairs and merged conjugated π clouds) and color-grouped, merged pi-orbital surfaces in a light-themed scene. Opposite π surfaces barely touch and are bounded without clipping; hovering one shows its ID, atom count and electron count beside the pointer. Space-filling atoms use overlapping van der Waals radii. The registry caches generated coordinates with mutation-aware invalidation. The cached RDKit SVG remains the lightweight
+  representation for future molecule icons.
 - Block UI panels are built with **Preact** (JSX/TSX via @preact/preset-vite)
   so components stay modular and reusable; the world engine only carries a
   `BlockUI` function and never touches the UI framework.

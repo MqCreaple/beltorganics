@@ -86,8 +86,8 @@ via `?url`; Node: resolved next to the package on disk).
   explicit hydrogens materialized from `impHs`, aromatic rings stored in
   kekulé form (alternating single/double bonds as RDKit reports them),
   tetrahedral labels from RDKit's canonical CIP data (`cipRanks`/`cipCodes`,
-  see section 4.2), and double-bond geometry as plain `'cis'`/`'trans'`
-  labels.
+  see section 4.2), and double-bond geometry as two substituent-bond ids
+  known to be cis.
 
 The library stays behind `src/chem/smiles.ts` (and the writer in
 `src/chem/smiles-writer.ts`), so it can be swapped. Tests:
@@ -169,8 +169,8 @@ roadmap step 2:
    branches before the continuation (so `(...)` attaches to the right atom),
    ring-closure digits for non-tree bonds, and stereo tokens (below). The
    output is valid but not canonical - `get_smiles()` canonicalizes.
-2. **Chiral token mapping.** The game stores `TetrahedralStereo` as an explicit
-   local-chirality label (four incident bonds in an arbitrary order, fixed
+2. **Chiral token mapping.** The game stores `TetrahedralStereo` directly as a
+   four-bond tuple in an arbitrary order, with a fixed
    counterclockwise winding convention; mirror image = odd permutation). The
    writer computes the four neighbours in Daylight string order (from, implicit
    H, ring-closure neighbours in digit order, branches, continuation) and calls
@@ -186,13 +186,15 @@ roadmap step 2:
    parse - no re-serialization, no second RDKit call - and it is what makes
    ring chiral centres (proline, cholesterol, morphine, ...) round-trip and
    render wedges.
-3. **E/Z token mapping.** The game stores cis / trans on the double bond. The
-   writer emits equal directional tokens on both substituent single bonds for
-   trans (`C/C=C/C`) and different ones for cis (`C/C=C\C`); parsing reads
-   `'cis'` / `'trans'` from the JSON bond stereo. Requires exactly one
-   non-hydrogen substituent on each end of the double bond (otherwise the
-   game's plain cis/trans label is under-specified and serialization throws);
-   a substituent bond that is a ring closure is not supported.
+3. **E/Z token mapping.** A specified double bond stores a tuple containing
+   one substituent bond from each endpoint that are known to be cis. Any other
+   cross-bond pair is cis when both bonds have equal tuple membership and trans
+   when exactly one is present. Parsing uses RDKit's `stereoAtoms` pair and
+   flips one endpoint when RDKit labels that pair trans. The writer may then
+   choose any writable non-hydrogen substituent at each endpoint, derive the
+   relation from tuple membership, and solve the coupled `/` / `\` token signs
+   across a polyene. It never ranks side chains, so fully substituted alkenes
+   and beta-carotene round-trip alongside ordinary cis/trans but-2-ene.
 4. **Hydrogen folding.** The writer folds explicit H neighbours plus missing
    implicit H into each heavy atom's bracket H count; charged atoms are
    bracketed (`[NH4+]`, `[O-]`); pure-hydrogen molecules stay as `[H][H]`. The

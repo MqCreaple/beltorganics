@@ -64,9 +64,18 @@ function hydrogenCount(m: Molecule, atom: string): number {
   return m.neighbors(atom).filter((n) => m.getAtom(n).element === 'H').length;
 }
 
-function doubleBondStereo(m: Molecule): string | undefined {
+function doubleBondStereo(m: Molecule): 'cis' | 'trans' | undefined {
   const id = m.bonds().find((b) => m.getBond(b).order === 2);
-  return id === undefined ? undefined : m.getBond(id).stereo;
+  if (id === undefined) return undefined;
+  const { source, target, stereo } = m.getBond(id);
+  if (stereo === undefined) return undefined;
+  const heavyReference = (endpoint: string) => m.bondsOf(endpoint).find((bondId) => {
+    if (bondId === id) return false;
+    const bond = m.getBond(bondId);
+    const other = bond.source === endpoint ? bond.target : bond.source;
+    return m.getAtom(other).element !== 'H';
+  })!;
+  return stereo.includes(heavyReference(source)) === stereo.includes(heavyReference(target)) ? 'cis' : 'trans';
 }
 
 
@@ -207,9 +216,14 @@ function butene(geometry: 'cis' | 'trans'): Molecule {
   const c2 = m.addAtom('C');
   const c3 = m.addAtom('C');
   const c4 = m.addAtom('C');
-  m.addBond(c1, c2);
-  m.addBond(c2, c3, 2, { stereo: geometry });
-  m.addBond(c3, c4);
+  const first = m.addBond(c1, c2);
+  const doubleBond = m.addBond(c2, c3, 2);
+  const second = m.addBond(c3, c4);
+  m.addImplicitHydrogens();
+  const secondReference = geometry === 'cis'
+    ? second
+    : m.bondsOf(c3).find((bond) => bond !== doubleBond && bond !== second)!;
+  m.setBondStereo(doubleBond, [first, secondReference]);
   return m;
 }
 
@@ -232,7 +246,7 @@ function alanine(mirror: boolean): Molecule {
   const bonds = m.bondsOf(c);
   // The mirror image is an odd permutation of the order (swap two bonds).
   const order = mirror ? [bonds[0], bonds[1], bonds[3], bonds[2]] : [bonds[0], bonds[1], bonds[2], bonds[3]];
-  m.setAtomStereo(c, { bonds: order as [string, string, string, string] });
+  m.setAtomStereo(c, order as [string, string, string, string]);
   return m;
 }
 
@@ -260,6 +274,21 @@ describe('toSmiles', () => {
     expect(trans).toBe('C/C=C/C');
     expect(doubleBondStereo(parseSmiles(cis))).toBe('cis');
     expect(doubleBondStereo(parseSmiles(trans))).toBe('trans');
+  });
+
+  it('round-trips substituted E/Z systems in beta-carotene', () => {
+    const source = 'CC2(C)CCCC(\\C)=C2\\C=C\\C(\\C)=C\\C=C\\C(\\C)=C\\C=C\\C=C(/C)\\C=C\\C=C(/C)\\C=C\\C1=C(/C)CCCC1(C)C';
+    const molecule = parseSmiles(source);
+    const labelled = molecule.bonds().filter((bond) => molecule.getBond(bond).stereo !== undefined);
+    expect(labelled.length).toBeGreaterThan(5);
+    for (const bond of labelled) {
+      const stereo = molecule.getBond(bond).stereo!;
+      expect(stereo).toHaveLength(2);
+      expect(molecule.hasBond(stereo[0])).toBe(true);
+      expect(molecule.hasBond(stereo[1])).toBe(true);
+    }
+    const canonical = toSmiles(molecule);
+    expect(toSmiles(parseSmiles(canonical))).toBe(canonical);
   });
 
   it('enantiomers round-trip to distinct canonical names and keep their chirality', () => {
@@ -350,7 +379,7 @@ describe('stress: very long molecules', () => {
       const bonds = m.bondsOf(chain[i]!);
       const order = [bonds[0]!, bonds[1]!, bonds[2]!, bonds[3]!];
       if (nextBit()) [order[1], order[2]] = [order[2]!, order[1]!];
-      m.setAtomStereo(chain[i]!, { bonds: order as [string, string, string, string] });
+      m.setAtomStereo(chain[i]!, order as [string, string, string, string]);
       centres++;
     }
     expect(m.validate()).toHaveLength(0);
@@ -360,7 +389,7 @@ describe('stress: very long molecules', () => {
     const back = parseSmiles(smiles);
     // Every centre survives, and the round-trip is a fixed point (i.e. the
     // whole random chirality pattern is preserved).
-    expect(back.atoms().filter((id) => back.getAtom(id).stereo?.bonds !== undefined).length).toBe(centres);
+    expect(back.atoms().filter((id) => back.getAtom(id).stereo !== undefined).length).toBe(centres);
     expect(toSmiles(back)).toBe(smiles);
     // Performance guard: the measured round-trip is ~0.5 s; the generous
     // bound catches pathological (e.g. quadratic) regressions, not timing
@@ -389,18 +418,35 @@ describe('stress: very long molecules', () => {
       return seed % 2 === 0;
     };
     let stereogenic = 0;
+    const pendingStereo: Array<{ bond: string; geometry: 'cis' | 'trans' }> = [];
     for (let i = 0; i < count - 1; i++) {
       if (i % 3 === 0) {
         // Double bond C(3k)=C(3k+1); stereogenic only when both ends have a
         // heavy single-bond substituent (skip the terminal one at i = 0).
         const geometry = i > 0 && i + 2 < count ? (nextBit() ? 'cis' : 'trans') : undefined;
         if (geometry !== undefined) stereogenic++;
-        m.addBond(chain[i]!, chain[i + 1]!, 2, geometry !== undefined ? { stereo: geometry } : {});
+        const bond = m.addBond(chain[i]!, chain[i + 1]!, 2);
+        if (geometry !== undefined) pendingStereo.push({ bond, geometry });
       } else {
         m.addBond(chain[i]!, chain[i + 1]!);
       }
     }
     m.addImplicitHydrogens();
+    for (const { bond: doubleBond, geometry } of pendingStereo) {
+      const { source, target } = m.getBond(doubleBond);
+      const heavy = (endpoint: string) => m.bondsOf(endpoint).find((bondId) => {
+        if (bondId === doubleBond) return false;
+        const view = m.getBond(bondId);
+        const other = view.source === endpoint ? view.target : view.source;
+        return m.getAtom(other).element !== 'H';
+      })!;
+      const first = heavy(source);
+      const secondHeavy = heavy(target);
+      const second = geometry === 'cis'
+        ? secondHeavy
+        : m.bondsOf(target).find((bondId) => bondId !== doubleBond && bondId !== secondHeavy)!;
+      m.setBondStereo(doubleBond, [first, second]);
+    }
 
     const doubleBonds = m.bonds().filter((id) => m.getBond(id).order === 2).length;
     const started = performance.now();
@@ -411,7 +457,7 @@ describe('stress: very long molecules', () => {
     expect(
       back.bonds().filter((id) => {
         const b = back.getBond(id);
-        return b.order === 2 && (b.stereo === 'cis' || b.stereo === 'trans');
+        return b.order === 2 && b.stereo !== undefined;
       }).length,
     ).toBe(stereogenic);
     expect(toSmiles(back)).toBe(smiles);
@@ -462,7 +508,7 @@ describe('ring chiral centres', () => {
 
   it('stores explicit labels on ring chiral centres', () => {
     const m = parseSmiles('C1C[C@H](NC1)C(=O)O');
-    const labelled = m.atoms().filter((id) => m.getAtom(id).stereo?.bonds !== undefined);
+    const labelled = m.atoms().filter((id) => m.getAtom(id).stereo !== undefined);
     expect(labelled).toHaveLength(1);
     expect(m.validate()).toHaveLength(0);
   });

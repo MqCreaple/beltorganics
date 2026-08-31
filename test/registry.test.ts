@@ -2,6 +2,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MoleculeRegistry } from '../src/chem';
 
 describe('MoleculeRegistry rendered SVG cache', () => {
+  it('caches display geometry and regenerates it after graph mutation', () => {
+    const registry = new MoleculeRegistry();
+    const first = registry.geometry('C#C');
+    expect(registry.geometry('C#C')).toBe(first);
+    expect(registry.geometryCount).toBe(1);
+
+    const molecule = registry.get('C#C');
+    molecule.setBondOrder(molecule.bonds()[0]!, 2);
+    const changed = registry.geometry('C#C');
+    expect(changed).not.toBe(first);
+    expect(registry.geometryCount).toBe(1);
+  });
+
   it('renders a structure-diagram SVG lazily and caches it', () => {
     const registry = new MoleculeRegistry();
     expect(registry.svgCount).toBe(0);
@@ -70,14 +83,17 @@ describe('MoleculeRegistry rendered SVG cache', () => {
     expect(cholesterol.includes('stroke-width:1.0px') || /\bZ\b/.test(cholesterol)).toBe(true);
   });
 
-  it('clear() empties both the molecule and svg caches', () => {
+  it('clear() empties the molecule, SVG, and geometry caches', () => {
     const registry = new MoleculeRegistry();
     registry.renderSvg('CCO');
+    registry.geometry('CCO');
     expect(registry.size).toBe(1);
     expect(registry.svgCount).toBe(1);
+    expect(registry.geometryCount).toBe(1);
     registry.clear();
     expect(registry.size).toBe(0);
     expect(registry.svgCount).toBe(0);
+    expect(registry.geometryCount).toBe(0);
   });
 });
 

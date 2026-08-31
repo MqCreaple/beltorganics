@@ -48,7 +48,7 @@ body {
 .block-panel {
   display: flex;
   flex-direction: column;
-  width: min(560px, calc(100vw - 4rem));
+  width: min(780px, calc(100vw - 4rem));
   max-height: calc(100vh - 4rem);
   background: #ffffff;
   border: 1px solid #d5dae3;
@@ -86,7 +86,7 @@ body {
   overflow: auto;
 }
 
-/* Molecule visualization panel (name title + info table + structure-diagram SVG). */
+/* Molecule visualization panel (metadata + interactive 3D property layers). */
 .molecule-panel-title {
   margin: 0 0 0.75rem;
   font-weight: 600;
@@ -117,6 +117,161 @@ body {
 .molecule-panel-note {
   margin: 0;
   color: #6b7385;
+  font-size: 12px;
+}
+
+.molecule-viewer {
+  overflow: hidden;
+  border: 1px solid #cbd3df;
+  border-radius: 12px;
+  background: #f4f7fb;
+  box-shadow: 0 8px 24px rgba(55, 68, 88, 0.14);
+}
+.molecule-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  padding: 0.55rem;
+  border-bottom: 1px solid #d7deea;
+  background: #ffffff;
+}
+.molecule-viewer-modes,
+.molecule-viewer-representation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+.molecule-viewer-toolbar button,
+.molecule-viewer-reset {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.36rem 0.58rem;
+  background: transparent;
+  color: #566173;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.molecule-viewer-toolbar button:hover,
+.molecule-viewer-reset:hover {
+  color: #172033;
+  background: #e9eef6;
+}
+.molecule-viewer-toolbar button[aria-pressed='true'] {
+  border-color: #7e9cc4;
+  background: #dfeafb;
+  color: #173b69;
+  box-shadow: inset 0 0 0 1px rgba(73, 105, 145, 0.08);
+}
+.molecule-viewer-representation {
+  flex: 0 0 auto;
+  padding-left: 0.6rem;
+  border-left: 1px solid #d7deea;
+}
+.molecule-viewer-stage {
+  position: relative;
+  height: clamp(310px, 48vh, 430px);
+  min-height: 0;
+}
+.molecule-viewer-host {
+  position: absolute;
+  inset: 0;
+}
+.molecule-viewer-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+.molecule-viewer-canvas:active {
+  cursor: grabbing;
+}
+.molecule-viewer-reset {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  z-index: 1;
+  border-color: rgba(104, 120, 144, 0.35);
+  background: rgba(255, 255, 255, 0.82);
+  color: #4a5668;
+  backdrop-filter: blur(6px);
+}
+.molecule-viewer-orbital-tooltip {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 0.12rem;
+  min-width: 118px;
+  padding: 0.48rem 0.58rem;
+  border: 1px solid rgba(91, 109, 139, 0.32);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 5px 18px rgba(42, 54, 75, 0.17);
+  color: #4b576a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateY(-100%);
+  backdrop-filter: blur(6px);
+}
+.molecule-viewer-orbital-tooltip strong {
+  color: #263650;
+  font-size: 12px;
+}
+.molecule-viewer-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 2rem;
+  color: #a22f3a;
+  background: #f4f7fb;
+}
+.molecule-viewer-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 38px;
+  padding: 0.55rem 0.7rem;
+  border-top: 1px solid #d7deea;
+  background: #ffffff;
+  color: #455064;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.viewer-legend {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.3rem;
+  color: #67748a;
+}
+.charge-gradient i {
+  width: 70px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #397ee0, #b8c0cc 50%, #e04e56);
+}
+.geometry-legend b {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 0.2rem;
+  border-radius: 50%;
+}
+.geometry-legend .sp {
+  background: #f4c24f;
+}
+.geometry-legend .sp2 {
+  background: #35b9a9;
+}
+.geometry-legend .sp3 {
+  background: #9473d3;
 }
 
 .game-hud {
@@ -141,17 +296,29 @@ body {
   margin-top: 4px;
   color: #6b7385;
 }
-/* Structure-diagram SVG rendered by the chemistry engine (RDKit). */
-.molecule-panel-svg {
-  margin-top: 0.5rem;
-  background: #ffffff;
-  border: 1px solid #d5dae3;
-  border-radius: 8px;
-  padding: 0.5rem;
-}
-/* The SVG carries fixed width/height attributes; scale it to the panel. */
-.molecule-panel-svg svg {
-  display: block;
-  width: 100%;
-  height: auto;
+@media (max-width: 680px) {
+  .block-panel {
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+  }
+  .block-panel-content {
+    padding: 0.65rem;
+  }
+  .molecule-viewer-toolbar,
+  .molecule-viewer-caption {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .molecule-viewer-representation {
+    padding-top: 0.45rem;
+    padding-left: 0;
+    border-top: 1px solid #334055;
+    border-left: 0;
+  }
+  .molecule-viewer-stage {
+    height: min(390px, 48vh);
+  }
+  .viewer-legend {
+    flex-wrap: wrap;
+  }
 }

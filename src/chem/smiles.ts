@@ -11,7 +11,7 @@ import type { RDKitModule } from './rdkit';
  *
  * - `parseSmiles` asks RDKit for the molecule, reads its JSON representation
  *   (atoms with element/charge/implicit-H, bonds with order and stereo, atom
- *   stereo 'cw'/'ccw', bond stereo 'cis'/'trans') and builds the game graph
+ *   stereo 'cw'/'ccw', bond stereo 'cis'/'trans' plus reference atoms) and builds the game graph
  *   from it. Implicit hydrogens are materialised as explicit atoms, matching
  *   the game's convention.
  * - `toSmiles` serializes the game graph with the game's own SMILES writer
@@ -79,8 +79,8 @@ interface RdkitJson {
  * CIP sense ('R'/'S' plus per-atom CIP ranks, from the JSON's
  * `rdkitRepresentation` extension) - a representation-independent reference,
  * so ring chiral centres (proline, cholesterol, morphine, ...) round-trip
- * without a second parse - and double-bond geometry as plain 'cis'/'trans'
- * labels.
+ * without a second parse - and double-bond geometry as a pair of substituent
+ * bond ids known to be cis.
  *
  * Requires `initRdkit()` to have been awaited first.
  */
@@ -197,7 +197,9 @@ function addJsonMolecule(
     }
   }
 
-  // Double-bond geometry from the JSON bond stereo.
+  // Double-bond geometry from RDKit's two reference atoms. The stored pair is
+  // always cis: when RDKit says its reference pair is trans, flip exactly one
+  // endpoint to its other substituent. Hydrogens are explicit by this point.
   for (const bond of data.bonds) {
     if (bond.stereo !== 'cis' && bond.stereo !== 'trans') continue;
     const a = gameByJson.get(bond.atoms[0] + offset);
@@ -205,7 +207,33 @@ function addJsonMolecule(
     if (a === undefined || b === undefined) continue;
     const gameBond = molecule.bondBetween(a, b);
     if (gameBond === undefined) continue;
-    molecule.setBondStereo(gameBond, bond.stereo);
+    const references = (bond.stereoAtoms ?? []).map((index) => gameByJson.get(index + offset));
+    if (references.length !== 2 || references.some((atom) => atom === undefined)) {
+      throw new Error(`parseSmiles: stereo double bond is missing its two reference atoms in "${source}"`);
+    }
+    const byEndpoint = new Map<AtomId, BondId>();
+    for (const reference of references as AtomId[]) {
+      const endpoint = molecule.bondBetween(a, reference) !== undefined ? a
+        : molecule.bondBetween(b, reference) !== undefined ? b
+          : undefined;
+      if (endpoint === undefined) {
+        throw new Error(`parseSmiles: stereo reference is not adjacent to its double bond in "${source}"`);
+      }
+      byEndpoint.set(endpoint, molecule.bondBetween(endpoint, reference)!);
+    }
+    const first = byEndpoint.get(a);
+    let second = byEndpoint.get(b);
+    if (first === undefined || second === undefined) {
+      throw new Error(`parseSmiles: stereo references do not cover both double-bond endpoints in "${source}"`);
+    }
+    if (bond.stereo === 'trans') {
+      const alternatives = molecule.bondsOf(b).filter((candidate) => candidate !== gameBond && candidate !== second);
+      if (alternatives.length !== 1) {
+        throw new Error(`parseSmiles: cannot select the cis partner of a trans double bond in "${source}"`);
+      }
+      second = alternatives[0]!;
+    }
+    molecule.setBondStereo(gameBond, [first, second]);
   }
 }
 
@@ -239,8 +267,8 @@ function labelFromCipRanks(
     if (rx !== ry) return ry - rx; // higher rank first (higher priority)
     return x.localeCompare(y); // stable tie-break (chiral centres have distinct ranks)
   }) as [BondId, BondId, BondId, BondId];
-  if (sense === 'R') return { bonds: [reference[0]!, reference[1]!, reference[3]!, reference[2]!] };
-  return { bonds: reference };
+  if (sense === 'R') return [reference[0]!, reference[1]!, reference[3]!, reference[2]!];
+  return reference;
 }
 
 /** CIP rank of the other endpoint of `bond` (implicit H is lowest). */
@@ -294,8 +322,7 @@ function tetrahedralLabelFromSense(
     (x, y) => neighborJsonRank(molecule, atom, x, jsonByGame) - neighborJsonRank(molecule, atom, y, jsonByGame),
   );
   const reference = ordered as [BondId, BondId, BondId, BondId];
-  if (sense === 'ccw') return { bonds: reference };
-  return { bonds: [reference[0]!, reference[1]!, reference[3]!, reference[2]!] };
+  if (sense === 'ccw') return reference;
+  return [reference[0]!, reference[1]!, reference[3]!, reference[2]!];
 }
-
 

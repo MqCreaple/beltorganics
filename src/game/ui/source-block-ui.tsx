@@ -8,8 +8,8 @@ import { MoleculePanel } from './molecule-panel';
  *
  * The returned function creates a host element, renders the (Preact) panel
  * into it and hands the host back - the world engine only ever sees the DOM
- * element, never Preact. The panel receives the global molecule registry so
- * the structure-diagram SVG is parsed/rendered lazily and cached there.
+ * element, never Preact. The panel receives the global molecule registry for
+ * its cached graph, substance metadata and interactive 3D property viewer.
  */
 export function chemicalSourceUI(formula: string): BlockUI {
   return () => {

@@ -5,7 +5,7 @@
  *
  * A `TetrahedralStereo` label is an explicit local chirality specification:
  * the four bonds incident to a centre in an arbitrary order. The winding
- * convention is fixed - looking down `bonds[0]` (from the substituent toward
+ * convention is fixed - looking down `stereo[0]` (from the substituent toward
  * the centre), the three trailing bonds wind **counterclockwise** - so the
  * order alone encodes the chirality: the mirror-image arrangement is an odd
  * permutation (swap any two bonds) of the order.
@@ -63,32 +63,25 @@ export function orderIndicator(order: readonly BondId[]): 1 | -1 {
  *
  * Specified labels: same arrangement iff their orders are in the same chiral
  * class (equal order indicators), because the winding convention is fixed.
- * Unspecified labels (`bonds` omitted) are equal to each other and never equal
- * to a specified label.
  */
 export function sameTetrahedron(a: TetrahedralStereo, b: TetrahedralStereo): boolean {
-  if (a.bonds === undefined || b.bonds === undefined) return a.bonds === b.bonds;
-  return orderIndicator(a.bonds) === orderIndicator(b.bonds);
+  return orderIndicator(a) === orderIndicator(b);
 }
 
 /**
  * Winding sense of the three trailing bonds of `stereo` when looking down a
  * different bond. Converts the label from its own viewpoint (looking down
- * `stereo.bonds[0]`, counterclockwise by convention) to "looking down
+ * `stereo[0]`, counterclockwise by convention) to "looking down
  * `targetBond`, with the remaining bonds in the given `order`".
  *
- * Throws if the label is unspecified.
  */
 export function directionFromBond(
   stereo: TetrahedralStereo,
   targetBond: BondId,
   order: readonly [BondId, BondId, BondId],
 ): TetrahedralDirection {
-  if (stereo.bonds === undefined) {
-    throw new Error('directionFromBond: unspecified tetrahedral stereo');
-  }
   const index = new Map<BondId, number>();
-  stereo.bonds.forEach((id, i) => index.set(id, i));
+  stereo.forEach((id, i) => index.set(id, i));
   const t = index.get(targetBond);
   const a = index.get(order[0]);
   const b = index.get(order[1]);

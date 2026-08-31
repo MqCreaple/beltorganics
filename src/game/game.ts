@@ -15,8 +15,8 @@ export interface GameOptions extends GameSceneOptions {
  *
  * Owns the Phaser.Game instance and the shared {@link World}; rendering and
  * input live in {@link GameScene}. The world (`src/world/`) and chemistry
- * (`src/chem/`) engines stay framework-free; only this wrapper and the scene
- * touch Phaser, so the engine keeps running in Node tests.
+ * (`src/chem/`) engines stay DOM- and Phaser-free; only this wrapper and the
+ * scene touch Phaser, so the engine keeps running in Node tests.
  */
 export class Game {
   readonly world = new World();
