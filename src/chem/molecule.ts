@@ -378,13 +378,14 @@ export class Molecule {
     for (const atom of this.atoms()) {
       const view = this.getAtom(atom);
       const used = this.bondOrderSum(atom);
-      if (used > ELEMENTS[view.element].valence) {
+      const maximumValence = Math.max(...ELEMENTS[view.element].allowedValences);
+      if (used > maximumValence) {
         issues.push({
           code: 'valence-exceeded',
           atom,
           message:
-            `${view.element} uses ${used} hands but has valence ` +
-            `${ELEMENTS[view.element].valence} (may be intentional for a charged species)`,
+            `${view.element} uses ${used} hands but its maximum allowed valence is ` +
+            `${maximumValence} (may be intentional for a charged species)`,
         });
       }
       if (view.stereo !== undefined) {
