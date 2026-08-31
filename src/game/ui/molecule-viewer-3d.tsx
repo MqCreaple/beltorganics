@@ -15,11 +15,10 @@ import {
   displayedLonePairCount,
   hybridizationOf,
   lonePairDirections,
-  molecularOrbitals,
   partialCharges,
   piSystemNormals,
 } from '../../chem';
-import type { AtomId, MolecularOrbital, Molecule, MoleculeGeometry } from '../../chem';
+import type { AtomId, ElementSymbol, Molecule, MoleculeGeometry } from '../../chem';
 
 export type MoleculeViewerLayer =
   | 'structure'
@@ -43,6 +42,17 @@ const LAYERS: ReadonlyArray<{ value: MoleculeViewerLayer; label: string }> = [
   { value: 'orbitals', label: 'π orbitals' },
 ];
 
+const ELEMENT_COLOR: Record<ElementSymbol, number> = {
+  C: 0x343b45,
+  H: 0xf0f3f7,
+  O: 0xe14c52,
+  N: 0x3976d3,
+};
+
+const BALL_RADIUS: Record<ElementSymbol, number> = { C: 0.32, H: 0.22, O: 0.3, N: 0.31 };
+/** Bondi/Rowland-Taylor van der Waals radii in ångströms. */
+const SPACE_RADIUS: Record<ElementSymbol, number> = { C: 1.7, H: 1.1, O: 1.52, N: 1.55 };
+
 interface ViewerRuntime {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
@@ -64,7 +74,6 @@ interface OrbitalHover {
   id: string;
   atomCount: number;
   electronCount: number;
-  energy: number;
 }
 
 export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) {
@@ -74,20 +83,9 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
   const [representation, setRepresentation] = useState<MoleculeRepresentation>('ball-stick');
   const [hovered, setHovered] = useState<string>('Drag to rotate · scroll or pinch to zoom');
   const [orbitalHover, setOrbitalHover] = useState<OrbitalHover | null>(null);
-  const [selectedOrbitalId, setSelectedOrbitalId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const charges = useMemo(() => partialCharges(molecule), [molecule]);
   const piSystems = useMemo(() => conjugatedPiSystems(molecule), [molecule]);
-  const orbitalResult = useMemo(() => molecularOrbitals(molecule), [molecule]);
-  const piOrbitals = useMemo(
-    () => orbitalResult.orbitals.filter((orbital) => orbital.kind === 'pi'),
-    [orbitalResult],
-  );
-  const selectedOrbital = useMemo(() => (
-    piOrbitals.find((orbital) => orbital.id === selectedOrbitalId)
-      ?? piOrbitals.filter((orbital) => orbital.electrons > 0).at(-1)
-      ?? piOrbitals[0]
-  ), [piOrbitals, selectedOrbitalId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -154,7 +152,7 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
             left: Math.max(8, Math.min(rect.width - 142, event.clientX - rect.left + 14)),
             top: Math.max(72, event.clientY - rect.top + 14),
           });
-          setHovered(`Orbital ${orbitalLabel(orbital.id)} · E ${orbital.energy.toFixed(3)} · ${orbital.electronCount} electrons`);
+          setHovered(`Orbital ${orbital.id} · ${orbital.atomCount} atoms · ${orbital.electronCount} electrons`);
           return;
         }
       }
@@ -231,7 +229,6 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
       geometry.positions,
       charges,
       piSystems,
-      selectedOrbital,
       layer,
       representation,
     );
@@ -239,7 +236,7 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
     runtime.orbitalMeshes = meshes.orbitals;
     setHovered('Drag to rotate · scroll or pinch to zoom');
     setOrbitalHover(null);
-  }, [molecule, geometry, charges, piSystems, selectedOrbital, layer, representation]);
+  }, [molecule, geometry, charges, piSystems, layer, representation]);
 
   return (
     <section className="molecule-viewer" aria-label="3D molecule viewer">
@@ -257,21 +254,6 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
           ))}
         </div>
         <div className="molecule-viewer-representation" aria-label="Molecule representation">
-          {layer === 'orbitals' && piOrbitals.length > 0 ? (
-            <label>
-              Orbital
-              <select
-                value={selectedOrbital?.id}
-                onChange={(event) => setSelectedOrbitalId(event.currentTarget.value)}
-              >
-                {piOrbitals.map((orbital) => (
-                  <option key={orbital.id} value={orbital.id}>
-                    {orbitalLabel(orbital.id)} · {orbital.electrons > 0 ? `${orbital.electrons}e` : 'empty'} · E {orbital.energy.toFixed(3)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
           <button
             type="button"
             aria-pressed={representation === 'ball-stick'}
@@ -302,10 +284,9 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
             className="molecule-viewer-orbital-tooltip"
             style={{ left: orbitalHover.left, top: orbitalHover.top }}
           >
-            <strong>Orbital {orbitalLabel(orbitalHover.id)}</strong>
+            <strong>Orbital {orbitalHover.id}</strong>
             <span>{orbitalHover.atomCount} atoms</span>
             <span>{orbitalHover.electronCount} electrons</span>
-            <span>Relative energy {orbitalHover.energy.toFixed(3)}</span>
           </aside>
         )}
         {error === null ? null : <p className="molecule-viewer-error">3D view unavailable: {error}</p>}
@@ -331,7 +312,7 @@ function LayerLegend({ layer, hasOrbitals }: { layer: MoleculeViewerLayer; hasOr
   if (layer === 'orbitals') {
     return <span className="viewer-legend">{hasOrbitals ? 'One hue per π system · light/dark = opposite phase' : 'No π system in this molecule'}</span>;
   }
-  return <span className="viewer-legend">Element colors follow the molecule catalog</span>;
+  return <span className="viewer-legend">C dark · H white · O red · N blue</span>;
 }
 
 function populateMolecule(
@@ -340,7 +321,6 @@ function populateMolecule(
   positions: ReadonlyMap<AtomId, THREE.Vector3>,
   charges: ReadonlyMap<AtomId, number>,
   piSystems: ReturnType<typeof conjugatedPiSystems>,
-  selectedOrbital: MolecularOrbital | undefined,
   layer: MoleculeViewerLayer,
   representation: MoleculeRepresentation,
 ): { atoms: THREE.Mesh[]; orbitals: THREE.Mesh[] } {
@@ -362,8 +342,8 @@ function populateMolecule(
         const start = first.clone().add(offset);
         const end = second.clone().add(offset);
         const midpoint = start.clone().add(end).multiplyScalar(0.5);
-        const firstColor = layer === 'structure' ? ELEMENTS[molecule.getAtom(bond.source).element].displayColor : 0x818c9e;
-        const secondColor = layer === 'structure' ? ELEMENTS[molecule.getAtom(bond.target).element].displayColor : 0x818c9e;
+        const firstColor = layer === 'structure' ? ELEMENT_COLOR[molecule.getAtom(bond.source).element] : 0x818c9e;
+        const secondColor = layer === 'structure' ? ELEMENT_COLOR[molecule.getAtom(bond.target).element] : 0x818c9e;
         group.add(cylinderBetween(start, midpoint, 0.055, firstColor));
         group.add(cylinderBetween(midpoint, end, 0.055, secondColor));
       }
@@ -378,9 +358,8 @@ function populateMolecule(
     const charge = charges.get(atom) ?? 0;
     const radius =
       representation === 'space-fill' && layer !== 'orbitals'
-        ? ELEMENTS[view.element].vanDerWaalsRadius
-        : Math.max(0.22, ELEMENTS[view.element].covalentRadius * 0.42)
-          * (layer === 'orbitals' ? 0.78 : 1);
+        ? SPACE_RADIUS[view.element]
+        : BALL_RADIUS[view.element] * (layer === 'orbitals' ? 0.78 : 1);
     const color = atomColor(molecule, atom, layer, charge);
     const material = new THREE.MeshStandardMaterial({
       color,
@@ -399,7 +378,7 @@ function populateMolecule(
   }
 
   if (layer === 'density') addPiElectronClouds(group, molecule, positions, piSystems);
-  if (layer === 'orbitals') orbitalMeshes = addPiOrbital(group, molecule, positions, piSystems, selectedOrbital);
+  if (layer === 'orbitals') orbitalMeshes = addPiOrbitals(group, molecule, positions, piSystems);
   return { atoms: atomMeshes, orbitals: orbitalMeshes };
 }
 
@@ -453,40 +432,31 @@ function addPiElectronClouds(group: THREE.Group, molecule: Molecule, positions: 
   });
 }
 
-function addPiOrbital(
+function addPiOrbitals(
   group: THREE.Group,
   molecule: Molecule,
   positions: ReadonlyMap<AtomId, THREE.Vector3>,
   systems: ReturnType<typeof conjugatedPiSystems>,
-  orbital: MolecularOrbital | undefined,
 ): THREE.Mesh[] {
-  if (orbital === undefined || orbital.piSystem === undefined) return [];
   const result: THREE.Mesh[] = [];
   const normals = piSystemNormals(molecule, systems, positions);
-  const system = systems[orbital.piSystem];
-  if (system === undefined) return [];
-  const normal = normals[orbital.piSystem]!;
-  const base = new THREE.Color(PI_SYSTEM_COLORS[orbital.piSystem % PI_SYSTEM_COLORS.length]!);
-  const colors = ([-1, 1] as const).map((phase) => (
-    base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex()
-  )) as [number, number];
-  const surfaces = addMergedPiSurfaces(
-    group, system.atoms, positions, normal, colors, 0.5, 0.58, 4, orbital.coefficients,
-  );
-  for (const surface of surfaces) {
-    surface.userData.piOrbital = {
-      id: orbital.id,
-      atomCount: system.atoms.length,
-      electronCount: orbital.electrons,
-      energy: orbital.energy,
-    };
-    result.push(surface);
-  }
+  systems.forEach((system, systemIndex) => {
+    const normal = normals[systemIndex]!;
+    const base = new THREE.Color(PI_SYSTEM_COLORS[systemIndex % PI_SYSTEM_COLORS.length]!);
+    const colors = ([-1, 1] as const).map((phase) => (
+      base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex()
+    )) as [number, number];
+    const surfaces = addMergedPiSurfaces(group, system.atoms, positions, normal, colors, 0.5, 0.58, 4);
+    for (const surface of surfaces) {
+      surface.userData.piOrbital = {
+        id: `π${systemIndex + 1}`,
+        atomCount: system.atoms.length,
+        electronCount: system.electronCount,
+      };
+      result.push(surface);
+    }
+  });
   return result;
-}
-
-function orbitalLabel(id: string): string {
-  return id.replace(/^pi/, 'π').replace(/^sigma/, 'σ');
 }
 
 /**
@@ -502,25 +472,15 @@ function addMergedPiSurfaces(
   opacity: number,
   radius: number,
   renderOrder: number,
-  amplitudes?: ReadonlyMap<AtomId, number>,
 ): [negative: THREE.Mesh, positive: THREE.Mesh] {
   // Offset each lobe by its isolated isosurface radius so opposite phases
   // barely meet at the molecular plane instead of overlapping visibly.
-  const largestAmplitude = amplitudes === undefined
-    ? 1
-    : Math.max(...atoms.map((atom) => Math.abs(amplitudes.get(atom) ?? 0)));
-  const activeAtoms = atoms.filter((atom) => (
-    amplitudes === undefined || Math.abs(amplitudes.get(atom) ?? 0) > largestAmplitude * 0.02
-  ));
-  const atomCenters = activeAtoms.map((atom) => positions.get(atom)!);
+  const atomCenters = atoms.map((atom) => positions.get(atom)!);
   const systemCenter = atomCenters.reduce(
     (sum, point) => sum.add(point),
     new THREE.Vector3(),
   ).multiplyScalar(1 / atomCenters.length);
-  const centers = atomCenters.map((point, index) => {
-    const amplitude = amplitudes?.get(activeAtoms[index]!) ?? 1;
-    return point.clone().addScaledVector(normal, Math.sign(amplitude) * piLobeOffset(radius));
-  });
+  const centers = atomCenters.map((point) => point.clone().addScaledVector(normal, piLobeOffset(radius)));
   const isolation = PI_SURFACE_ISOLATION;
   const subtract = PI_SURFACE_SUBTRACT;
   // A Three.js metaball's positive field extends beyond its requested
@@ -536,13 +496,12 @@ function addMergedPiSurfaces(
   surface.position.copy(center);
   surface.scale.setScalar(extent / 2);
   const strength = (surface.isolation + subtract) * (radius / extent) ** 2;
-  for (const [index, point] of centers.entries()) {
-    const amplitude = Math.abs(amplitudes?.get(activeAtoms[index]!) ?? 1) / largestAmplitude;
+  for (const point of centers) {
     surface.addBall(
       (point.x - center.x) / extent + 0.5,
       (point.y - center.y) / extent + 0.5,
       (point.z - center.z) / extent + 0.5,
-      strength * (amplitudes === undefined ? 1 : Math.max(0.18, amplitude ** 0.75)),
+      strength,
       subtract,
     );
   }
@@ -629,7 +588,7 @@ function atomColor(molecule: Molecule, atom: AtomId, layer: MoleculeViewerLayer,
     if (hybridization === 'sp2') return 0x35b9a9;
     return 0x9473d3;
   }
-  return ELEMENTS[element].displayColor;
+  return ELEMENT_COLOR[element];
 }
 
 function chargeColor(charge: number): number {

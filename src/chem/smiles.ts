@@ -3,7 +3,6 @@ import type { AtomId, BondId } from './molecule';
 import type { ElementSymbol, TetrahedralStereo } from './types';
 import { smilesFromMolecule } from './smiles-writer';
 import { getRdkitModule } from './rdkit';
-import { ELEMENT_FROM_ATOMIC_NUMBER } from './elements';
 import type { RDKitModule } from './rdkit';
 
 /**
@@ -21,6 +20,8 @@ import type { RDKitModule } from './rdkit';
  *
  * The canonical flavour is RDKit's (ethanol `CCO`), matching the player docs.
  */
+
+const ELEMENT_FROM_NUMBER: Record<number, ElementSymbol> = { 6: 'C', 1: 'H', 8: 'O', 7: 'N' };
 
 export interface ToSmilesOptions {
   /** Emit canonical SMILES (unique, order-independent). Default true. */
@@ -137,9 +138,9 @@ function addJsonMolecule(
   for (const [localIdx, atom] of data.atoms.entries()) {
     const idx = localIdx + offset;
     const z = atom.z ?? 6;
-    const element = ELEMENT_FROM_ATOMIC_NUMBER.get(z);
+    const element = ELEMENT_FROM_NUMBER[z];
     if (element === undefined) {
-      throw new Error(`parseSmiles: element with atomic number ${z} is not in the game`);
+      throw new Error(`parseSmiles: element with atomic number ${z} is not in the game (only C, H, O, N)`);
     }
     const id = molecule.addAtom(element, { formalCharge: atom.chg ?? 0 });
     gameByJson.set(idx, id);
@@ -161,7 +162,7 @@ function addJsonMolecule(
     const gameId = gameByJson.get(idx);
     if (gameId === undefined) continue;
     const z = atom.z ?? 6;
-    if (ELEMENT_FROM_ATOMIC_NUMBER.get(z) === 'H') continue; // explicit H entries stay as-is
+    if (ELEMENT_FROM_NUMBER[z] === 'H') continue; // explicit H entries stay as-is
     for (let i = 0; i < (atom.impHs ?? 0); i++) {
       molecule.addBond(gameId, molecule.addAtom('H'));
     }
@@ -324,3 +325,4 @@ function tetrahedralLabelFromSense(
   if (sense === 'ccw') return reference;
   return [reference[0]!, reference[1]!, reference[3]!, reference[2]!];
 }
+

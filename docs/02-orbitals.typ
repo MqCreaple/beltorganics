@@ -51,7 +51,7 @@ A molecule's electrons are not scattered at random: each one settles into an *or
   caption: [Electrons fill the lowest orbitals first, two per orbital. The higher an orbital, the more energy it costs to put an electron there.],
 )
 
-The inspector can show these orbitals directly. Its π-orbital selector lists each computed mode with its occupancy and relative energy; choosing one redraws the signed wavefunction, including its nodes and its unequal weight on different atoms. The numbers are game units rather than laboratory electron-volts, but their ordering and gaps are meaningful.
+You never see the orbitals directly: the inspector shows you what they add up to. But almost everything interesting in chemistry is a story about orbitals — whether they are full or empty, and how high or low they sit.
 
 == σ and π bonding <sec:sigma-pi-bonding>
 
@@ -127,8 +127,6 @@ almost freely between the two arrangements; the planar one is only marginally
 calmer.)
 
 Conjugation also reshapes the frontier orbitals: it *raises* the highest full orbital and *lowers* the lowest empty one, squeezing the gap between them. A small gap means the molecule is easily stirred — reactive, unstable, often colorful.
-
-The game obtains those modes by building one compact interaction table for every conjugated π system and solving it. Neighboring p orbitals interact; each atom's identity and partial charge shift its own level. The resulting wavefunction gives one signed coefficient per atom. A coefficient near zero makes a node, while a large coefficient makes a large lobe. In a carbonyl LUMO the Cardinium coefficient is larger than the Obligium coefficient, so the empty orbital exposes the Cardinium end to nucleophilic attack.
 
 == HOMO and LUMO — the giving and taking orbitals <sec:homo-lumo>
 
