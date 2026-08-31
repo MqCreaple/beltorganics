@@ -15,4 +15,8 @@ export const DEMO_SOURCES: ReadonlyArray<readonly [number, number, string]> = [
   [8, 4, 'C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O)C)C'],
   [-8, -4, 'CN1CC[C@]23[C@@H]4[C@H]1CC5=C2C(=C(C=C5)O)O[C@H]3[C@H](C=C4)O'],
   [-6, -4, 'N[C@@H](C)C(=O)O'],
+  [-5, 7, 'C#C'],
+  [-3, 7, 'C#N'],
+  [-1, 7, 'C=CC#CC=C'],
+  [1, 7, 'CC2(C)CCCC(\\C)=C2\\C=C\\C(\\C)=C\\C=C\\C(\\C)=C\\C=C\\C=C(/C)\\C=C\\C=C(/C)\\C=C\\C1=C(/C)CCCC1(C)C'],
 ];
