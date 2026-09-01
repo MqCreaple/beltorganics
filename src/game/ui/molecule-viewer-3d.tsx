@@ -539,6 +539,41 @@ function markOrbitalMesh(mesh: THREE.Mesh, orbital: MolecularOrbital): void {
   } satisfies Omit<OrbitalHover, 'left' | 'top'>;
 }
 
+/** One connected, asymmetric surface for a bonding two-center sigma mode. */
+function bondingSigmaLobe(
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  sizes: readonly [number, number],
+  coefficient: number,
+): THREE.Mesh {
+  const axis = end.clone().sub(start);
+  const bondLength = axis.length();
+  axis.normalize();
+  const halfBond = bondLength / 2;
+  const lower = -halfBond - sizes[0] * 0.85;
+  const upper = halfBond + sizes[1] * 0.85;
+  const profile: THREE.Vector2[] = [];
+  for (let step = 0; step <= 40; step += 1) {
+    const fraction = step / 40;
+    const y = THREE.MathUtils.lerp(lower, upper, fraction);
+    const alongBond = THREE.MathUtils.clamp((y + halfBond) / bondLength, 0, 1);
+    const smooth = alongBond * alongBond * (3 - 2 * alongBond);
+    const localRadius = THREE.MathUtils.lerp(sizes[0], sizes[1], smooth);
+    const endCap = step === 0 || step === 40
+      ? 0
+      : Math.sqrt(Math.min(1, Math.max(0, Math.sin(Math.PI * fraction) * 3)));
+    profile.push(new THREE.Vector2(localRadius * endCap, y));
+  }
+  const mesh = new THREE.Mesh(
+    new THREE.LatheGeometry(profile, 32),
+    orbitalMaterial(coefficient),
+  );
+  mesh.position.copy(start).add(end).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
+  mesh.renderOrder = 4;
+  return mesh;
+}
+
 function addSigmaOrbital(
   group: THREE.Group,
   positions: ReadonlyMap<AtomId, THREE.Vector3>,
@@ -555,22 +590,24 @@ function addSigmaOrbital(
   const antibonding = entries[0]![1] * entries[1]![1] < 0;
   const requestedSizes = entries.map(([, coefficient]) => {
     const relative = Math.abs(coefficient) / largest;
-    return 0.42 * (0.45 + 0.55 * Math.sqrt(relative));
-  });
+    return 0.2 + 0.34 * relative;
+  }) as [number, number];
   const result: THREE.Mesh[] = [];
+  if (!antibonding) {
+    const mesh = bondingSigmaLobe(points[0]!, points[1]!, requestedSizes, entries[0]![1]);
+    markOrbitalMesh(mesh, orbital);
+    group.add(mesh);
+    return [mesh];
+  }
   entries.forEach(([atom, coefficient], index) => {
     const other = entries[1 - index]![0];
     const direction = positions.get(other)!.clone().sub(positions.get(atom)!).normalize();
-    const size = antibonding
-      ? cappedAntibondingSigmaLobeSize(requestedSizes[index]!, bondLength)
-      : requestedSizes[index]!;
-    const center = antibonding
-      ? midpoint.clone().addScaledVector(
-        bondAxis,
-        (index === 0 ? -1 : 1)
-          * (size * SIGMA_LOBE_AXIAL_SCALE + SIGMA_ANTIBONDING_NODE_GAP / 2),
-      )
-      : positions.get(atom)!.clone().addScaledVector(direction, 0.2);
+    const size = cappedAntibondingSigmaLobeSize(requestedSizes[index]!, bondLength);
+    const center = midpoint.clone().addScaledVector(
+      bondAxis,
+      (index === 0 ? -1 : 1)
+        * (size * SIGMA_LOBE_AXIAL_SCALE + SIGMA_ANTIBONDING_NODE_GAP / 2),
+    );
     const mesh = localizedOrbitalLobe(center, direction, size, coefficient);
     markOrbitalMesh(mesh, orbital);
     group.add(mesh);

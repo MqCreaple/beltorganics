@@ -2,7 +2,11 @@ import { symmetricEigenDecomposition } from "../math";
 import { conjugatedPiSystems } from "./conjugation";
 import { ELEMENTS } from "./elements";
 import { displayedLonePairCount } from "./geometry";
-import { partialCharges } from "./partial-charges";
+import {
+  partialCharges,
+  peoeElectronegativity,
+  peoeParametersFor,
+} from "./partial-charges";
 import type { AtomId, Molecule } from "./molecule";
 
 export type OrbitalKind = "sigma" | "pi" | "lone-pair";
@@ -35,12 +39,34 @@ export interface MolecularOrbitalResult {
 
 const PI_COUPLING = -1;
 const PARTIAL_CHARGE_SHIFT = -0.35;
+const SIGMA_COUPLING_EV = -4;
+/** Empirical molecular relaxation applied to the PEOE integer-charge shift. */
+export const FORMAL_CHARGE_RELAXATION = 0.87;
 /** Affine calibration from dimensionless game levels to display eV. */
 export const ORBITAL_ENERGY_SCALE_EV = 2.5;
 export const ORBITAL_ENERGY_ZERO_EV = -7.5;
 
 export function orbitalEnergyEv(relativeEnergy: number): number {
   return ORBITAL_ENERGY_ZERO_EV + ORBITAL_ENERGY_SCALE_EV * relativeEnergy;
+}
+
+export function relativeOrbitalEnergy(energyEv: number): number {
+  return (energyEv - ORBITAL_ENERGY_ZERO_EV) / ORBITAL_ENERGY_SCALE_EV;
+}
+
+/**
+ * Shift an atom's orbital levels by the PEOE electronegativity change for its
+ * integer charge. The minus sign converts electronegativity to electron
+ * energy; relaxation screens the isolated-atom response inside a molecule.
+ */
+export function formalChargeOrbitalShiftEv(molecule: Molecule, atom: AtomId): number {
+  const formalCharge = molecule.getAtom(atom).formalCharge;
+  if (formalCharge === 0) return 0;
+  const parameters = peoeParametersFor(molecule, atom);
+  return -FORMAL_CHARGE_RELAXATION * (
+    peoeElectronegativity(parameters, formalCharge)
+    - peoeElectronegativity(parameters, 0)
+  );
 }
 
 function coefficients(
@@ -61,7 +87,8 @@ function piOrbitalsWithCharges(
           const view = molecule.getAtom(atom);
           return (
             ELEMENTS[view.element].huckelCoulomb +
-            PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge)
+            PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge) +
+            formalChargeOrbitalShiftEv(molecule, atom) / ORBITAL_ENERGY_SCALE_EV
           );
         }
         const bond = molecule.bondBetween(atom, other);
@@ -104,13 +131,17 @@ function sigmaOrbitals(
     const atoms = [bond.source, bond.target] as const;
     const diagonal = atoms.map((atom) => {
       const view = molecule.getAtom(atom);
-      return (
-        -3 +
-        0.15 * ELEMENTS[view.element].huckelCoulomb +
-        PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge)
+      const neutralOrbitalEnergyEv = -peoeParametersFor(molecule, atom).a;
+      const partialChargeShiftEv = ORBITAL_ENERGY_SCALE_EV
+        * PARTIAL_CHARGE_SHIFT
+        * (charges.get(atom) ?? view.formalCharge);
+      return relativeOrbitalEnergy(
+        neutralOrbitalEnergyEv
+        + partialChargeShiftEv
+        + formalChargeOrbitalShiftEv(molecule, atom),
       );
     });
-    const coupling = -4;
+    const coupling = SIGMA_COUPLING_EV / ORBITAL_ENERGY_SCALE_EV;
     const solved = symmetricEigenDecomposition([
       [diagonal[0]!, coupling],
       [coupling, diagonal[1]!],
@@ -142,7 +173,8 @@ function lonePairOrbitals(
       const energy =
         -1.5 +
         0.4 * ELEMENTS[view.element].huckelCoulomb +
-        PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge);
+        PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge) +
+        formalChargeOrbitalShiftEv(molecule, atom) / ORBITAL_ENERGY_SCALE_EV;
       result.push({
         id: `n${sequence++}`,
         kind: "lone-pair",

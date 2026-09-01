@@ -14,12 +14,12 @@ export interface PartialChargeOptions {
 const DEFAULT_ITERATIONS = 8;
 const DEFAULT_DAMPING = 0.5;
 
-/** Evaluate an atom's effective electronegativity at partial charge `q`. */
-function electronegativity(parameters: PeoeParameters, q: number): number {
+/** Evaluate an atom's effective orbital electronegativity at charge `q`. */
+export function peoeElectronegativity(parameters: PeoeParameters, q: number): number {
   return parameters.a + parameters.b * q + parameters.c * q * q;
 }
 
-function parametersFor(molecule: Molecule, atom: AtomId): PeoeParameters {
+export function peoeParametersFor(molecule: Molecule, atom: AtomId): PeoeParameters {
   const { element } = molecule.getAtom(atom);
   const parameters = ELEMENTS[element].peoe;
   const hybridization = hybridizationOf(molecule, atom);
@@ -105,7 +105,7 @@ export function partialCharges(
 ): Map<AtomId, number> {
   const { iterations, damping } = validateOptions(options);
   const atoms = molecule.atoms();
-  const parameters = new Map(atoms.map((atom) => [atom, parametersFor(molecule, atom)]));
+  const parameters = new Map(atoms.map((atom) => [atom, peoeParametersFor(molecule, atom)]));
   const charges = new Map(atoms.map((atom) => [atom, molecule.getAtom(atom).formalCharge]));
   const bonds = orderedBonds(molecule);
 
@@ -114,7 +114,7 @@ export function partialCharges(
     const chi = new Map(
       atoms.map((atom) => {
         const parametersForAtom = parameters.get(atom)!;
-        return [atom, electronegativity(parametersForAtom, charges.get(atom)!)] as const;
+        return [atom, peoeElectronegativity(parametersForAtom, charges.get(atom)!)] as const;
       }),
     );
     const changes = new Map(atoms.map((atom) => [atom, 0]));
@@ -130,7 +130,7 @@ export function partialCharges(
       const donor = acceptor === first ? second : first;
       const difference = Math.abs(firstChi - secondChi);
       const donorParameters = parameters.get(donor)!;
-      const denominator = electronegativity(donorParameters, 1);
+      const denominator = peoeElectronegativity(donorParameters, 1);
       const transfer = (passDamping * difference) / denominator;
 
       changes.set(acceptor, changes.get(acceptor)! - transfer);

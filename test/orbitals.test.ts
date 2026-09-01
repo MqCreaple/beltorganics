@@ -50,6 +50,40 @@ describe("molecular orbitals", () => {
     );
   });
 
+  it("polarizes heteronuclear sigma modes in opposite directions", () => {
+    const molecule = parseSmiles("CO");
+    const carbon = molecule.atoms().find((atom) => molecule.getAtom(atom).element === "C")!;
+    const oxygen = molecule.atoms().find((atom) => molecule.getAtom(atom).element === "O")!;
+    const modes = molecularOrbitals(molecule).orbitals.filter((orbital) =>
+      orbital.kind === "sigma"
+      && orbital.coefficients.has(carbon)
+      && orbital.coefficients.has(oxygen)
+    );
+    expect(modes).toHaveLength(2);
+    expect(Math.abs(modes[0]!.coefficients.get(oxygen)!)).toBeGreaterThan(
+      Math.abs(modes[0]!.coefficients.get(carbon)!),
+    );
+    expect(Math.abs(modes[1]!.coefficients.get(carbon)!)).toBeGreaterThan(
+      Math.abs(modes[1]!.coefficients.get(oxygen)!),
+    );
+  });
+
+  it("raises an alkoxide lone pair toward its measured detachment energy", () => {
+    const oxygenLonePairEnergy = (smiles: string): number => {
+      const molecule = parseSmiles(smiles);
+      const oxygen = molecule.atoms().find((atom) => molecule.getAtom(atom).element === "O")!;
+      return molecularOrbitals(molecule).orbitals.find((orbital) =>
+        orbital.kind === "lone-pair" && orbital.coefficients.has(oxygen)
+      )!.energyEv;
+    };
+    const ethanol = oxygenLonePairEnergy("CCO");
+    const ethoxide = oxygenLonePairEnergy("CC[O-]");
+    expect(ethanol).toBeGreaterThan(-13);
+    expect(ethanol).toBeLessThan(-9);
+    expect(ethoxide).toBeCloseTo(-1.71, 1);
+    expect(ethoxide - ethanol).toBeGreaterThan(8);
+  });
+
   it("gives a conjugated diene a smaller pi frontier gap than ethene", () => {
     const gap = (smiles: string): number => {
       const orbitals = piMolecularOrbitals(parseSmiles(smiles));
