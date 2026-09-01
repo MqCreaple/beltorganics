@@ -89,3 +89,12 @@ tests and the browser alike.
   UI panels and Three.js molecule viewer (`src/game/ui/`), plus the shortcut registry
   (`src/game/shortcuts.ts`)
 - `test/` - Vitest suites
+
+## Known Bugs
+
+- Delocalised systems' σ bonding energies are not degenerate;
+- Space filling does not work in orbital interface; (if intended please grey out the option)
+- Displayed name of substances not unified; (Common name v.s. IUPAC name, capitalisation)
+- Hybridisation geometry of H should be 's' instead of '1s';
+- Electric domains of I- not being tetrahedral despite adopting sp3 hybridisation;
+- Names of anions does not display the negative charge and the name for hydrogen cyanide should be HCN instead of CHN.
