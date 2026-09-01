@@ -39,9 +39,11 @@ export interface MolecularOrbitalResult {
 
 const PI_COUPLING = -1;
 const PARTIAL_CHARGE_SHIFT = -0.35;
-const SIGMA_COUPLING_EV = -4;
-/** Empirical molecular relaxation applied to the PEOE integer-charge shift. */
-export const FORMAL_CHARGE_RELAXATION = 0.87;
+const SIGMA_COUPLING_EV = -7;
+const MULTIPLE_BOND_SIGMA_COUPLING_EV = -1;
+const MOLECULAR_CHARGE_ADDITION_SHIFT_EV = -5;
+/** Empirical molecular relaxation applied only to a charge-bearing frontier mode. */
+export const FORMAL_CHARGE_RELAXATION = 0.65;
 /** Affine calibration from dimensionless game levels to display eV. */
 export const ORBITAL_ENERGY_SCALE_EV = 2.5;
 export const ORBITAL_ENERGY_ZERO_EV = -7.5;
@@ -55,9 +57,10 @@ export function relativeOrbitalEnergy(energyEv: number): number {
 }
 
 /**
- * Shift an atom's orbital levels by the PEOE electronegativity change for its
- * integer charge. The minus sign converts electronegativity to electron
- * energy; relaxation screens the isolated-atom response inside a molecule.
+ * Estimate the energy carried by an atom's integer charge from the PEOE
+ * electronegativity change. The caller assigns this correction to the
+ * charge-bearing frontier mode instead of shifting every basis level twice
+ * (once through partial charge and once through formal charge).
  */
 export function formalChargeOrbitalShiftEv(molecule: Molecule, atom: AtomId): number {
   const formalCharge = molecule.getAtom(atom).formalCharge;
@@ -87,8 +90,7 @@ function piOrbitalsWithCharges(
           const view = molecule.getAtom(atom);
           return (
             ELEMENTS[view.element].huckelCoulomb +
-            PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge) +
-            formalChargeOrbitalShiftEv(molecule, atom) / ORBITAL_ENERGY_SCALE_EV
+            PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge)
           );
         }
         const bond = molecule.bondBetween(atom, other);
@@ -100,16 +102,29 @@ function piOrbitalsWithCharges(
       0,
       Math.min(system.electronCount, system.atoms.length * 2),
     );
-    return solved.values.map((energy, orbitalIndex): MolecularOrbital => {
+    const occupiedCount = Math.ceil(electronsLeft / 2);
+    return solved.values.map((baseEnergy, orbitalIndex): MolecularOrbital => {
       const electrons = Math.min(2, electronsLeft) as 0 | 1 | 2;
       electronsLeft -= electrons;
+      const vector = solved.vectors[orbitalIndex]!;
+      let chargeShiftEv = 0;
+      for (const [atomIndex, atom] of system.atoms.entries()) {
+        const formalCharge = molecule.getAtom(atom).formalCharge;
+        const receivesAnionShift = formalCharge < 0 && orbitalIndex === occupiedCount - 1;
+        const receivesCationShift = formalCharge > 0 && orbitalIndex === occupiedCount;
+        if (receivesAnionShift || receivesCationShift) {
+          chargeShiftEv += formalChargeOrbitalShiftEv(molecule, atom)
+            * Math.abs(vector[atomIndex]!);
+        }
+      }
+      const energy = baseEnergy + chargeShiftEv / ORBITAL_ENERGY_SCALE_EV;
       return {
         id: `pi${systemIndex + 1}.${orbitalIndex + 1}`,
         kind: "pi",
         energy,
         energyEv: orbitalEnergyEv(energy),
         electrons,
-        coefficients: coefficients(system.atoms, solved.vectors[orbitalIndex]!),
+        coefficients: coefficients(system.atoms, vector),
         piSystem: systemIndex,
       };
     });
@@ -137,11 +152,13 @@ function sigmaOrbitals(
         * (charges.get(atom) ?? view.formalCharge);
       return relativeOrbitalEnergy(
         neutralOrbitalEnergyEv
-        + partialChargeShiftEv
-        + formalChargeOrbitalShiftEv(molecule, atom),
+        + partialChargeShiftEv,
       );
     });
-    const coupling = SIGMA_COUPLING_EV / ORBITAL_ENERGY_SCALE_EV;
+    const coupling = (
+      SIGMA_COUPLING_EV
+      + (bond.order - 1) * MULTIPLE_BOND_SIGMA_COUPLING_EV
+    ) / ORBITAL_ENERGY_SCALE_EV;
     const solved = symmetricEigenDecomposition([
       [diagonal[0]!, coupling],
       [coupling, diagonal[1]!],
@@ -170,11 +187,21 @@ function lonePairOrbitals(
     const view = molecule.getAtom(atom);
     const count = displayedLonePairCount(molecule, atom);
     for (let pair = 0; pair < count; pair += 1) {
+      const hydrogenNeighbors = molecule.neighbors(atom).filter(
+        (neighbor) => molecule.getAtom(neighbor).element === "H",
+      ).length;
+      const environmentShiftEv = view.element === "O"
+        ? 2.5 - hydrogenNeighbors
+        : view.element === "N" ? 1.4 : 1.5;
+      const isChargeBearingPair = view.formalCharge < 0
+        && pair >= ELEMENTS[view.element].lonePairs;
       const energy =
         -1.5 +
         0.4 * ELEMENTS[view.element].huckelCoulomb +
         PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge) +
-        formalChargeOrbitalShiftEv(molecule, atom) / ORBITAL_ENERGY_SCALE_EV;
+        environmentShiftEv / ORBITAL_ENERGY_SCALE_EV +
+        (isChargeBearingPair ? formalChargeOrbitalShiftEv(molecule, atom) : 0)
+          / ORBITAL_ENERGY_SCALE_EV;
       result.push({
         id: `n${sequence++}`,
         kind: "lone-pair",
@@ -198,11 +225,20 @@ function lonePairOrbitals(
  */
 export function molecularOrbitals(molecule: Molecule): MolecularOrbitalResult {
   const charges = partialCharges(molecule);
+  const molecularCharge = molecule.atoms().reduce(
+    (sum, atom) => sum + molecule.getAtom(atom).formalCharge,
+    0,
+  );
+  const additionShiftEv = MOLECULAR_CHARGE_ADDITION_SHIFT_EV * molecularCharge;
   const orbitals = [
     ...sigmaOrbitals(molecule, charges),
     ...lonePairOrbitals(molecule, charges),
     ...piOrbitalsWithCharges(molecule, charges),
-  ].sort(
+  ].map((orbital): MolecularOrbital => {
+    if (orbital.electrons > 0 || molecularCharge === 0) return orbital;
+    const energyEv = orbital.energyEv + additionShiftEv;
+    return { ...orbital, energyEv, energy: relativeOrbitalEnergy(energyEv) };
+  }).sort(
     (first, second) =>
       first.energy - second.energy || first.id.localeCompare(second.id),
   );

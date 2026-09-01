@@ -72,9 +72,9 @@ describe("molecular orbitals", () => {
     const oxygenLonePairEnergy = (smiles: string): number => {
       const molecule = parseSmiles(smiles);
       const oxygen = molecule.atoms().find((atom) => molecule.getAtom(atom).element === "O")!;
-      return molecularOrbitals(molecule).orbitals.find((orbital) =>
+      return Math.max(...molecularOrbitals(molecule).orbitals.filter((orbital) =>
         orbital.kind === "lone-pair" && orbital.coefficients.has(oxygen)
-      )!.energyEv;
+      ).map((orbital) => orbital.energyEv));
     };
     const ethanol = oxygenLonePairEnergy("CCO");
     const ethoxide = oxygenLonePairEnergy("CC[O-]");
@@ -82,6 +82,30 @@ describe("molecular orbitals", () => {
     expect(ethanol).toBeLessThan(-9);
     expect(ethoxide).toBeCloseTo(-1.71, 1);
     expect(ethoxide - ethanol).toBeGreaterThan(8);
+  });
+
+  it.each([
+    ["water", "O", "lone-pair", "sigma"],
+    ["ethanol", "CCO", "lone-pair", "sigma"],
+    ["acetone", "CC(=O)C", "lone-pair", "pi"],
+    ["ammonia", "N", "lone-pair", "sigma"],
+    ["acetic acid", "CC(=O)O", "lone-pair", "pi"],
+    ["acetate", "CC(=O)[O-]", "pi", "pi"],
+  ] as const)(
+    "gives %s its benchmark frontier-orbital characters",
+    (_name, smiles, homoKind, lumoKind) => {
+      const result = molecularOrbitals(parseSmiles(smiles));
+      expect(result.homo?.kind).toBe(homoKind);
+      expect(result.lumo?.kind).toBe(lumoKind);
+      expect(result.gapEv).toBeGreaterThan(0);
+    },
+  );
+
+  it("places the acetate frontier near its measured detachment energy", () => {
+    const homo = molecularOrbitals(parseSmiles("CC(=O)[O-]")).homo!;
+    expect(homo.kind).toBe("pi");
+    expect(homo.energyEv).toBeGreaterThan(-4);
+    expect(homo.energyEv).toBeLessThan(-3);
   });
 
   it("gives a conjugated diene a smaller pi frontier gap than ethene", () => {

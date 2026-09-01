@@ -6,12 +6,14 @@ import { OrbitalEnergyDiagram, orbitalLabel } from './orbital-energy-diagram';
 import {
   PI_SURFACE_ISOLATION,
   PI_SURFACE_SUBTRACT,
-  SIGMA_ANTIBONDING_NODE_GAP,
   SIGMA_LOBE_AXIAL_SCALE,
+  SIGMA_SURFACE_AXIAL_RATIO,
   cappedAntibondingSigmaLobeSize,
   metaballSupportRadius,
   piLobeOffset,
   piSurfaceResolution,
+  sigmaAntibondingCenterOffset,
+  sigmaBondingCenterOffset,
 } from './pi-surface-math';
 import {
   ELEMENTS,
@@ -539,7 +541,7 @@ function markOrbitalMesh(mesh: THREE.Mesh, orbital: MolecularOrbital): void {
   } satisfies Omit<OrbitalHover, 'left' | 'top'>;
 }
 
-/** One connected, asymmetric surface for a bonding two-center sigma mode. */
+/** Merge two inward-shifted ellipsoidal fields into one bonding sigma cloud. */
 function bondingSigmaLobe(
   start: THREE.Vector3,
   end: THREE.Vector3,
@@ -549,26 +551,49 @@ function bondingSigmaLobe(
   const axis = end.clone().sub(start);
   const bondLength = axis.length();
   axis.normalize();
-  const halfBond = bondLength / 2;
-  const lower = -halfBond - sizes[0] * 0.85;
-  const upper = halfBond + sizes[1] * 0.85;
-  const profile: THREE.Vector2[] = [];
-  for (let step = 0; step <= 40; step += 1) {
-    const fraction = step / 40;
-    const y = THREE.MathUtils.lerp(lower, upper, fraction);
-    const alongBond = THREE.MathUtils.clamp((y + halfBond) / bondLength, 0, 1);
-    const smooth = alongBond * alongBond * (3 - 2 * alongBond);
-    const localRadius = THREE.MathUtils.lerp(sizes[0], sizes[1], smooth);
-    const endCap = step === 0 || step === 40
-      ? 0
-      : Math.sqrt(Math.min(1, Math.max(0, Math.sin(Math.PI * fraction) * 3)));
-    profile.push(new THREE.Vector2(localRadius * endCap, y));
-  }
-  const mesh = new THREE.Mesh(
-    new THREE.LatheGeometry(profile, 32),
+  const midpoint = start.clone().add(end).multiplyScalar(0.5);
+  const centerOffset = sigmaBondingCenterOffset(bondLength);
+  // MarchingCubes has a cubic field. Compress positions along its local y
+  // axis, then stretch the resulting mesh to turn both metaballs into
+  // bond-aligned ellipsoids.
+  const transformedCenters = [
+    -centerOffset / SIGMA_SURFACE_AXIAL_RATIO,
+    centerOffset / SIGMA_SURFACE_AXIAL_RATIO,
+  ] as const;
+  const support = metaballSupportRadius(Math.max(...sizes));
+  const lower = transformedCenters[0] - support;
+  const upper = transformedCenters[1] + support;
+  const fieldCenter = (lower + upper) / 2;
+  const extent = Math.max(1.8, upper - lower, support * 2);
+  const mesh = new MarchingCubes(
+    piSurfaceResolution(extent),
     orbitalMaterial(coefficient),
+    false,
+    false,
+    30_000,
   );
-  mesh.position.copy(start).add(end).multiplyScalar(0.5);
+  mesh.isolation = PI_SURFACE_ISOLATION;
+  for (const [index, center] of transformedCenters.entries()) {
+    const strength = (PI_SURFACE_ISOLATION + PI_SURFACE_SUBTRACT)
+      * (sizes[index]! / extent) ** 2;
+    mesh.addBall(
+      0.5,
+      (center - fieldCenter) / extent + 0.5,
+      0.5,
+      strength,
+      PI_SURFACE_SUBTRACT,
+    );
+  }
+  mesh.update();
+  mesh.position.copy(midpoint).addScaledVector(
+    axis,
+    fieldCenter * SIGMA_SURFACE_AXIAL_RATIO,
+  );
+  mesh.scale.set(
+    extent / 2,
+    extent * SIGMA_SURFACE_AXIAL_RATIO / 2,
+    extent / 2,
+  );
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
   mesh.renderOrder = 4;
   return mesh;
@@ -599,14 +624,15 @@ function addSigmaOrbital(
     group.add(mesh);
     return [mesh];
   }
+  const antibondingOffset = sigmaAntibondingCenterOffset(bondLength);
+  const lobeSeparation = antibondingOffset * 2;
   entries.forEach(([atom, coefficient], index) => {
     const other = entries[1 - index]![0];
     const direction = positions.get(other)!.clone().sub(positions.get(atom)!).normalize();
-    const size = cappedAntibondingSigmaLobeSize(requestedSizes[index]!, bondLength);
+    const size = cappedAntibondingSigmaLobeSize(requestedSizes[index]!, lobeSeparation);
     const center = midpoint.clone().addScaledVector(
       bondAxis,
-      (index === 0 ? -1 : 1)
-        * (size * SIGMA_LOBE_AXIAL_SCALE + SIGMA_ANTIBONDING_NODE_GAP / 2),
+      (index === 0 ? -1 : 1) * antibondingOffset,
     );
     const mesh = localizedOrbitalLobe(center, direction, size, coefficient);
     markOrbitalMesh(mesh, orbital);

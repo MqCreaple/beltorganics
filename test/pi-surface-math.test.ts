@@ -17,6 +17,8 @@ import {
   metaballSupportRadius,
   piLobeOffset,
   piSurfaceResolution,
+  sigmaAntibondingCenterOffset,
+  sigmaBondingCenterOffset,
 } from '../src/game/ui/pi-surface-math';
 
 describe('merged pi surface geometry', () => {
@@ -24,6 +26,12 @@ describe('merged pi surface geometry', () => {
     const size = cappedAntibondingSigmaLobeSize(0.42, 0.74);
     expect(2 * size * SIGMA_LOBE_AXIAL_SCALE + SIGMA_ANTIBONDING_NODE_GAP)
       .toBeLessThanOrEqual(0.74 + Number.EPSILON);
+  });
+
+  it('moves sigma density inward for bonding and outward for antibonding', () => {
+    const halfBond = 1.5 / 2;
+    expect(sigmaBondingCenterOffset(1.5)).toBeLessThan(halfBond);
+    expect(sigmaAntibondingCenterOffset(1.5)).toBeGreaterThan(halfBond);
   });
 
   it('separates opposite lobe centers by one diameter', () => {
