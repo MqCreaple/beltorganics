@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
+import { OrbitalEnergyDiagram, orbitalLabel } from './orbital-energy-diagram';
 import {
   PI_SURFACE_ISOLATION,
   PI_SURFACE_SUBTRACT,
@@ -40,7 +41,7 @@ const LAYERS: ReadonlyArray<{ value: MoleculeViewerLayer; label: string }> = [
   { value: 'geometry', label: 'Hybridization' },
   { value: 'charge', label: 'Charge' },
   { value: 'density', label: 'Electron cloud' },
-  { value: 'orbitals', label: 'π orbitals' },
+  { value: 'orbitals', label: 'Orbitals' },
 ];
 
 interface ViewerRuntime {
@@ -64,7 +65,8 @@ interface OrbitalHover {
   id: string;
   atomCount: number;
   electronCount: number;
-  energy: number;
+  energyEv: number;
+  kind: MolecularOrbital['kind'];
 }
 
 export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) {
@@ -79,15 +81,11 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
   const charges = useMemo(() => partialCharges(molecule), [molecule]);
   const piSystems = useMemo(() => conjugatedPiSystems(molecule), [molecule]);
   const orbitalResult = useMemo(() => molecularOrbitals(molecule), [molecule]);
-  const piOrbitals = useMemo(
-    () => orbitalResult.orbitals.filter((orbital) => orbital.kind === 'pi'),
-    [orbitalResult],
-  );
   const selectedOrbital = useMemo(() => (
-    piOrbitals.find((orbital) => orbital.id === selectedOrbitalId)
-      ?? piOrbitals.filter((orbital) => orbital.electrons > 0).at(-1)
-      ?? piOrbitals[0]
-  ), [piOrbitals, selectedOrbitalId]);
+    orbitalResult.orbitals.find((orbital) => orbital.id === selectedOrbitalId)
+      ?? orbitalResult.homo
+      ?? orbitalResult.orbitals[0]
+  ), [orbitalResult, selectedOrbitalId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -147,14 +145,14 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
       raycaster.setFromCamera(pointer, camera);
       if (runtime.layer === 'orbitals') {
         const orbitalHit = raycaster.intersectObjects(runtime.orbitalMeshes, false)[0];
-        const orbital = orbitalHit?.object.userData.piOrbital as Omit<OrbitalHover, 'left' | 'top'> | undefined;
+        const orbital = orbitalHit?.object.userData.orbital as Omit<OrbitalHover, 'left' | 'top'> | undefined;
         if (orbital !== undefined) {
           setOrbitalHover({
             ...orbital,
             left: Math.max(8, Math.min(rect.width - 142, event.clientX - rect.left + 14)),
             top: Math.max(72, event.clientY - rect.top + 14),
           });
-          setHovered(`Orbital ${orbitalLabel(orbital.id)} · E ${orbital.energy.toFixed(3)} · ${orbital.electronCount} electrons`);
+          setHovered(`Orbital ${orbitalLabel(orbital.id)} · ${orbital.energyEv.toFixed(2)} eV · ${orbital.electronCount} electrons`);
           return;
         }
       }
@@ -164,7 +162,7 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
       if (atom === undefined) {
         setHovered('Drag to rotate · scroll or pinch to zoom');
       } else {
-        setHovered(atomDescription(molecule, atom, runtime.layer, charges, piSystems));
+        setHovered(atomDescription(molecule, atom, runtime.layer, charges));
       }
     };
     const onPointerLeave = () => {
@@ -257,21 +255,6 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
           ))}
         </div>
         <div className="molecule-viewer-representation" aria-label="Molecule representation">
-          {layer === 'orbitals' && piOrbitals.length > 0 ? (
-            <label>
-              Orbital
-              <select
-                value={selectedOrbital?.id}
-                onChange={(event) => setSelectedOrbitalId(event.currentTarget.value)}
-              >
-                {piOrbitals.map((orbital) => (
-                  <option key={orbital.id} value={orbital.id}>
-                    {orbitalLabel(orbital.id)} · {orbital.electrons > 0 ? `${orbital.electrons}e` : 'empty'} · E {orbital.energy.toFixed(3)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
           <button
             type="button"
             aria-pressed={representation === 'ball-stick'}
@@ -288,8 +271,17 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
           </button>
         </div>
       </div>
-      <div className="molecule-viewer-stage">
-        <div ref={hostRef} className="molecule-viewer-host" />
+      <div className={`molecule-viewer-stage ${layer === 'orbitals' ? 'has-orbital-diagram' : ''}`}>
+        <div className="molecule-viewer-content">
+          <div ref={hostRef} className="molecule-viewer-host" />
+          {layer === 'orbitals' ? (
+            <OrbitalEnergyDiagram
+              orbitals={orbitalResult.orbitals}
+              selectedId={selectedOrbital?.id}
+              onSelect={(orbital) => setSelectedOrbitalId(orbital.id)}
+            />
+          ) : null}
+        </div>
         <button
           type="button"
           className="molecule-viewer-reset"
@@ -303,16 +295,17 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
             style={{ left: orbitalHover.left, top: orbitalHover.top }}
           >
             <strong>Orbital {orbitalLabel(orbitalHover.id)}</strong>
+            <span>{orbitalHover.kind === 'lone-pair' ? 'lone pair' : `${orbitalHover.kind} orbital`}</span>
             <span>{orbitalHover.atomCount} atoms</span>
             <span>{orbitalHover.electronCount} electrons</span>
-            <span>Relative energy {orbitalHover.energy.toFixed(3)}</span>
+            <span>{orbitalHover.energyEv.toFixed(2)} eV</span>
           </aside>
         )}
         {error === null ? null : <p className="molecule-viewer-error">3D view unavailable: {error}</p>}
       </div>
       <div className="molecule-viewer-caption">
         <span>{hovered}</span>
-        <LayerLegend layer={layer} hasOrbitals={piSystems.length > 0} />
+        <LayerLegend layer={layer} hasOrbitals={orbitalResult.orbitals.length > 0} />
       </div>
     </section>
   );
@@ -329,7 +322,7 @@ function LayerLegend({ layer, hasOrbitals }: { layer: MoleculeViewerLayer; hasOr
     return <span className="viewer-legend">Clouds show bonds, lone pairs and delocalized π electrons</span>;
   }
   if (layer === 'orbitals') {
-    return <span className="viewer-legend">{hasOrbitals ? 'One hue per π system · light/dark = opposite phase' : 'No π system in this molecule'}</span>;
+    return <span className="viewer-legend">{hasOrbitals ? 'Choose an energy level · light/dark = opposite phase' : 'No molecular orbitals'}</span>;
   }
   return <span className="viewer-legend">Element colors follow the molecule catalog</span>;
 }
@@ -399,7 +392,7 @@ function populateMolecule(
   }
 
   if (layer === 'density') addPiElectronClouds(group, molecule, positions, piSystems);
-  if (layer === 'orbitals') orbitalMeshes = addPiOrbital(group, molecule, positions, piSystems, selectedOrbital);
+  if (layer === 'orbitals') orbitalMeshes = addOrbital(group, molecule, positions, piSystems, selectedOrbital);
   return { atoms: atomMeshes, orbitals: orbitalMeshes };
 }
 
@@ -474,19 +467,112 @@ function addPiOrbital(
     group, system.atoms, positions, normal, colors, 0.5, 0.58, 4, orbital.coefficients,
   );
   for (const surface of surfaces) {
-    surface.userData.piOrbital = {
+    surface.userData.orbital = {
       id: orbital.id,
       atomCount: system.atoms.length,
       electronCount: orbital.electrons,
-      energy: orbital.energy,
+      energyEv: orbital.energyEv,
+      kind: orbital.kind,
     };
     result.push(surface);
   }
   return result;
 }
 
-function orbitalLabel(id: string): string {
-  return id.replace(/^pi/, 'π').replace(/^sigma/, 'σ');
+function addOrbital(
+  group: THREE.Group,
+  molecule: Molecule,
+  positions: ReadonlyMap<AtomId, THREE.Vector3>,
+  systems: ReturnType<typeof conjugatedPiSystems>,
+  orbital: MolecularOrbital | undefined,
+): THREE.Mesh[] {
+  if (orbital === undefined) return [];
+  if (orbital.kind === 'pi') return addPiOrbital(group, molecule, positions, systems, orbital);
+  if (orbital.kind === 'sigma') return addSigmaOrbital(group, positions, orbital);
+  return addLonePairOrbital(group, molecule, positions, orbital);
+}
+
+const ORBITAL_PHASE_COLORS = { negative: 0xd16b46, positive: 0x3978c5 } as const;
+
+function orbitalMaterial(coefficient: number): THREE.MeshPhongMaterial {
+  return new THREE.MeshPhongMaterial({
+    color: coefficient < 0 ? ORBITAL_PHASE_COLORS.negative : ORBITAL_PHASE_COLORS.positive,
+    transparent: true,
+    opacity: 0.48,
+    depthWrite: false,
+    shininess: 65,
+    side: THREE.DoubleSide,
+  });
+}
+
+function localizedOrbitalLobe(
+  center: THREE.Vector3,
+  direction: THREE.Vector3,
+  size: number,
+  coefficient: number,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), orbitalMaterial(coefficient));
+  mesh.position.copy(center);
+  mesh.scale.set(size * 0.7, size * 1.35, size * 0.7);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  mesh.renderOrder = 4;
+  return mesh;
+}
+
+function markOrbitalMesh(mesh: THREE.Mesh, orbital: MolecularOrbital): void {
+  mesh.userData.orbital = {
+    id: orbital.id,
+    atomCount: orbital.coefficients.size,
+    electronCount: orbital.electrons,
+    energyEv: orbital.energyEv,
+    kind: orbital.kind,
+  } satisfies Omit<OrbitalHover, 'left' | 'top'>;
+}
+
+function addSigmaOrbital(
+  group: THREE.Group,
+  positions: ReadonlyMap<AtomId, THREE.Vector3>,
+  orbital: MolecularOrbital,
+): THREE.Mesh[] {
+  const entries = [...orbital.coefficients.entries()];
+  if (entries.length !== 2) return [];
+  const largest = Math.max(...entries.map(([, coefficient]) => Math.abs(coefficient)));
+  const result: THREE.Mesh[] = [];
+  entries.forEach(([atom, coefficient], index) => {
+    const other = entries[1 - index]![0];
+    const direction = positions.get(other)!.clone().sub(positions.get(atom)!).normalize();
+    const relative = Math.abs(coefficient) / largest;
+    const size = 0.42 * (0.45 + 0.55 * Math.sqrt(relative));
+    const center = positions.get(atom)!.clone().addScaledVector(direction, 0.2);
+    const mesh = localizedOrbitalLobe(center, direction, size, coefficient);
+    markOrbitalMesh(mesh, orbital);
+    group.add(mesh);
+    result.push(mesh);
+  });
+  return result;
+}
+
+function addLonePairOrbital(
+  group: THREE.Group,
+  molecule: Molecule,
+  positions: ReadonlyMap<AtomId, THREE.Vector3>,
+  orbital: MolecularOrbital,
+): THREE.Mesh[] {
+  const atom = orbital.coefficients.keys().next().value as AtomId | undefined;
+  if (atom === undefined) return [];
+  const direction = lonePairDirections(molecule, atom, positions)[orbital.lonePairIndex ?? 0];
+  if (direction === undefined) return [];
+  const center = positions.get(atom)!;
+  const outer = localizedOrbitalLobe(
+    center.clone().addScaledVector(direction, 0.52), direction, 0.46, 1,
+  );
+  const inner = localizedOrbitalLobe(
+    center.clone().addScaledVector(direction, -0.2), direction, 0.2, -1,
+  );
+  markOrbitalMesh(outer, orbital);
+  markOrbitalMesh(inner, orbital);
+  group.add(outer, inner);
+  return [outer, inner];
 }
 
 /**
@@ -643,7 +729,6 @@ function atomDescription(
   atom: AtomId,
   layer: MoleculeViewerLayer,
   charges: ReadonlyMap<AtomId, number>,
-  systems: ReturnType<typeof conjugatedPiSystems>,
 ): string {
   const { element } = molecule.getAtom(atom);
   const name = `${ELEMENTS[element].name} (${element})`;
@@ -654,8 +739,7 @@ function atomDescription(
   }
   if (layer === 'geometry') return `${name} · ${hybridizationOf(molecule, atom) ?? '1s'} geometry`;
   if (layer === 'orbitals') {
-    const index = systems.findIndex((system) => system.atoms.includes(atom));
-    return `${name} · ${index >= 0 ? `π system ${index + 1} · ${systems[index]!.electronCount} electrons` : 'no π orbital'}`;
+    return `${name} · choose a level in the orbital energy diagram`;
   }
   return name;
 }

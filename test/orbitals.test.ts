@@ -68,6 +68,7 @@ describe("molecular orbitals", () => {
     expect(result.homo).toBeDefined();
     expect(result.lumo).toBeDefined();
     expect(result.gap).toBeGreaterThan(0);
+    expect(result.gapEv).toBeCloseTo(result.gap! * 2.5, 10);
     expect(result.occupied.every((orbital) => orbital.electrons > 0)).toBe(
       true,
     );

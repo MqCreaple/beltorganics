@@ -12,21 +12,7 @@ import {
 describe("element catalog", () => {
   it("contains every requested element and all properties in ElementInfo", () => {
     expect(new Set(ELEMENT_SYMBOLS)).toEqual(
-      new Set([
-        "H",
-        "Li",
-        "B",
-        "C",
-        "N",
-        "O",
-        "F",
-        "Mg",
-        "P",
-        "S",
-        "Cl",
-        "Br",
-        "I",
-      ]),
+      new Set(["H", "B", "C", "N", "O", "F", "Cl", "Br", "I"]),
     );
     expect(
       new Set(ELEMENT_SYMBOLS.map((symbol) => ELEMENTS[symbol].atomicNumber))
@@ -45,20 +31,6 @@ describe("element catalog", () => {
     }
   });
 
-  it("uses expanded valences for phosphorus and sulfur validation", () => {
-    const phosphorus = new Molecule();
-    const p = phosphorus.addAtom("P");
-    for (let index = 0; index < 5; index += 1)
-      phosphorus.addBond(p, phosphorus.addAtom("F"));
-    expect(phosphorus.validate()).toHaveLength(0);
-
-    const sulfur = new Molecule();
-    const s = sulfur.addAtom("S");
-    for (let index = 0; index < 6; index += 1)
-      sulfur.addBond(s, sulfur.addAtom("F"));
-    expect(sulfur.validate()).toHaveLength(0);
-  });
-
   it("polarizes carbon-halogen bonds toward the halogen", () => {
     for (const halogen of ["F", "Cl", "Br", "I"] as const) {
       const molecule = new Molecule();
@@ -74,7 +46,7 @@ describe("element catalog", () => {
     }
   });
 
-  it.each(["B", "CF", "CCl", "CBr", "CI", "CS", "P", "[Li+]", "[Mg+2]"])(
+  it.each(["B", "[BH4-]", "CF", "CCl", "CBr", "CI"])(
     "builds display geometry for %s",
     (smiles) => {
       const molecule = parseSmiles(smiles);
@@ -85,4 +57,13 @@ describe("element catalog", () => {
       }
     },
   );
+
+  it("recognizes four-coordinate anionic boron as saturated", () => {
+    const borohydride = parseSmiles("[BH4-]");
+    const boron = borohydride
+      .atoms()
+      .find((atom) => borohydride.getAtom(atom).element === "B")!;
+    expect(borohydride.implicitHydrogens(boron)).toBe(0);
+    expect(borohydride.validate()).toHaveLength(0);
+  });
 });

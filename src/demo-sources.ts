@@ -24,7 +24,4 @@ export const DEMO_SOURCES: ReadonlyArray<readonly [number, number, string]> = [
   [-1, 9, 'CCl'],
   [1, 9, 'CI'],
   [3, 9, 'CC(=O)Cl'],
-  [-5, 11, 'CSC'],
-  [-3, 11, 'CS(=O)(=O)C'],
-  [-1, 11, 'c1ccccc1S(=O)(=O)O'],
 ];

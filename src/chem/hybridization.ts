@@ -59,7 +59,7 @@ function labelFromMultipleBonds(molecule: Molecule, atom: AtomId): Hybridization
  */
 export function hasConjugableLonePair(element: ElementSymbol, formalCharge: number): boolean {
   if (element === 'C') return formalCharge < 0;
-  return (element === 'N' || element === 'O' || element === 'P' || element === 'S'
+  return (element === 'N' || element === 'O'
     || element === 'F' || element === 'Cl' || element === 'Br' || element === 'I')
     && formalCharge <= 0;
 }
@@ -70,7 +70,7 @@ export function hasConjugableLonePair(element: ElementSymbol, formalCharge: numb
  */
 export function hybridizationOf(molecule: Molecule, atom: AtomId): Hybridization | undefined {
   const view = molecule.getAtom(atom);
-  if (view.element === 'H' || view.element === 'Li' || view.element === 'Mg') return undefined;
+  if (view.element === 'H') return undefined;
 
   const fromMultipleBonds = labelFromMultipleBonds(molecule, atom);
   if (fromMultipleBonds !== null) return fromMultipleBonds;

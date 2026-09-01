@@ -9,7 +9,7 @@ import type { Attributes } from 'graphology-types';
  */
 
 /** Game elements (invented names; real-world symbols). */
-export type ElementSymbol = 'B' | 'Br' | 'C' | 'Cl' | 'F' | 'H' | 'I' | 'Li' | 'Mg' | 'N' | 'O' | 'P' | 'S';
+export type ElementSymbol = 'B' | 'Br' | 'C' | 'Cl' | 'F' | 'H' | 'I' | 'N' | 'O';
 
 export type BondOrder = 1 | 2 | 3;
 

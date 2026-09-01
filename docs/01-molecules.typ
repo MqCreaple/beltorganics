@@ -64,7 +64,7 @@ The game stores every molecule as a *molecular graph*: a set of dots (the atoms)
 
 == The atoms <sec:the-atoms>
 
-The game begins with four common atoms — Cardinium (C), Habitium (H), Obligium (O) and Naturium (N) — and adds nine specialist atoms as the factory grows. The letters in parentheses are the shorthand used in formulas and canonical names, so water is written #ch("H2O"), ethanol is `CCO`, and chloromethane is `CCl`.
+The game begins with four common atoms — Cardinium (C), Habitium (H), Obligium (O) and Naturium (N) — and adds Brevium plus four halogens as the factory grows. The letters in parentheses are the shorthand used in formulas and canonical names, so water is written #ch("H2O"), ethanol is `CCO`, and chloromethane is `CCl`. Sociatium/Pivotium (S/P) and Liberium/Mergium (Li/Mg) are planned, but deferred until the game can represent their expanded-valence and organometallic behavior correctly.
 
 #pagebreak(weak: true)
 #figure(
@@ -81,15 +81,11 @@ The game begins with four common atoms — Cardinium (C), Habitium (H), Obligium
     [Claspium (#ch("Cl"))], [1], [3], [A larger halogen that holds shared electrons tightly.],
     [Branchium (#ch("Br"))], [1], [3], [A heavy, polarizable halogen branch.],
     [Inductium (#ch("I"))], [1], [3], [The most polarizable halogen cloud.],
-    [Sociatium (#ch("S"))], [2], [2], [A flexible connector that can also use four or six hands.],
-    [Pivotium (#ch("P"))], [3], [1], [A branching center that can also use five hands.],
-    [Liberium (#ch("Li"))], [1], [0], [A metal that readily gives up its outside electron.],
-    [Mergium (#ch("Mg"))], [2], [0], [A two-handed metal used to join organic groups to reactive centers.],
   ),
   caption: [The game's atoms: their usual hands, lone pairs, and pseudo-chemical personality.],
 )
 
-- *Hands*: the number shown is the usual neutral bonding pattern. Cardinium follows four hands, while the larger Sociatium and Pivotium atoms can use expanded patterns. The game records those allowed patterns explicitly.
+- *Hands*: the number shown is the usual neutral bonding pattern. Anionic Brevium is the supported exception: in borohydride, #ch("BH4-"), its extra electron completes four bonds without creating a lone pair.
 - *Lone pairs*: electrons that belong to a single atom and are not shared in a bond. They make that atom electron-rich (more on this later).
 
 Colors follow a consistent element palette: Cardinium is dark, Obligium red, Naturium blue, Habitium white, and each specialist atom has its own color in the 3D viewer.

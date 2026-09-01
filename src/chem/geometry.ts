@@ -183,7 +183,10 @@ export function idealBondAngle(molecule: Molecule, center: AtomId): number {
 /** Lone pairs drawn as localized electron domains (a conjugated p pair is excluded). */
 export function displayedLonePairCount(molecule: Molecule, atom: AtomId): number {
   const { element, formalCharge } = molecule.getAtom(atom);
-  let count = Math.max(0, ELEMENTS[element].lonePairs - formalCharge);
+  const nonbondingElectrons = ELEMENTS[element].valenceElectrons
+    - formalCharge
+    - molecule.bondOrderSum(atom);
+  let count = Math.max(0, Math.floor(nonbondingElectrons / 2));
   const hasOwnPiBond = molecule.bondsOf(atom).some((bondId) => molecule.getBond(bondId).order > 1);
   const donatesPairToPiSystem = !hasOwnPiBond
     && hybridizationOf(molecule, atom) === 'sp2'

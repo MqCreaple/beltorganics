@@ -12,11 +12,15 @@ export interface MolecularOrbital {
   kind: OrbitalKind;
   /** Relative game energy; lower values are more stable. */
   energy: number;
+  /** Approximate energy in electron-volts for the inspector diagram. */
+  energyEv: number;
   electrons: 0 | 1 | 2;
   /** Signed normalized atomic-orbital coefficients. */
   coefficients: Map<AtomId, number>;
   /** Conjugated-system index for pi orbitals. */
   piSystem?: number;
+  /** Direction index among an atom's localized lone-pair domains. */
+  lonePairIndex?: number;
 }
 
 export interface MolecularOrbitalResult {
@@ -26,10 +30,18 @@ export interface MolecularOrbitalResult {
   homo?: MolecularOrbital;
   lumo?: MolecularOrbital;
   gap?: number;
+  gapEv?: number;
 }
 
 const PI_COUPLING = -1;
 const PARTIAL_CHARGE_SHIFT = -0.35;
+/** Affine calibration from dimensionless game levels to display eV. */
+export const ORBITAL_ENERGY_SCALE_EV = 2.5;
+export const ORBITAL_ENERGY_ZERO_EV = -7.5;
+
+export function orbitalEnergyEv(relativeEnergy: number): number {
+  return ORBITAL_ENERGY_ZERO_EV + ORBITAL_ENERGY_SCALE_EV * relativeEnergy;
+}
 
 function coefficients(
   atoms: readonly AtomId[],
@@ -68,6 +80,7 @@ function piOrbitalsWithCharges(
         id: `pi${systemIndex + 1}.${orbitalIndex + 1}`,
         kind: "pi",
         energy,
+        energyEv: orbitalEnergyEv(energy),
         electrons,
         coefficients: coefficients(system.atoms, solved.vectors[orbitalIndex]!),
         piSystem: systemIndex,
@@ -107,6 +120,7 @@ function sigmaOrbitals(
         id: `sigma${bondIndex + 1}${index === 1 ? "*" : ""}`,
         kind: "sigma",
         energy,
+        energyEv: orbitalEnergyEv(energy),
         electrons: index === 0 ? 2 : 0,
         coefficients: coefficients(atoms, solved.vectors[index]!),
       }),
@@ -125,15 +139,18 @@ function lonePairOrbitals(
     const view = molecule.getAtom(atom);
     const count = displayedLonePairCount(molecule, atom);
     for (let pair = 0; pair < count; pair += 1) {
+      const energy =
+        -1.5 +
+        0.4 * ELEMENTS[view.element].huckelCoulomb +
+        PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge);
       result.push({
         id: `n${sequence++}`,
         kind: "lone-pair",
-        energy:
-          -1.5 +
-          0.4 * ELEMENTS[view.element].huckelCoulomb +
-          PARTIAL_CHARGE_SHIFT * (charges.get(atom) ?? view.formalCharge),
+        energy,
+        energyEv: orbitalEnergyEv(energy),
         electrons: 2,
         coefficients: new Map([[atom, 1]]),
+        lonePairIndex: pair,
       });
     }
   }
@@ -169,6 +186,9 @@ export function molecularOrbitals(molecule: Molecule): MolecularOrbitalResult {
     ...(lumo === undefined ? {} : { lumo }),
     ...(homo === undefined || lumo === undefined
       ? {}
-      : { gap: lumo.energy - homo.energy }),
+      : {
+          gap: lumo.energy - homo.energy,
+          gapEv: lumo.energyEv - homo.energyEv,
+        }),
   };
 }

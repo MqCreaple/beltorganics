@@ -40,7 +40,9 @@ describe('merged pi surface geometry', () => {
   });
 
   it('raises the field resolution for the beta-carotene pi chain', () => {
-    const source = DEMO_SOURCES.at(-1)![2];
+    const source = [...DEMO_SOURCES]
+      .sort((first, second) => first[2].length - second[2].length)
+      .at(-1)![2];
     const molecule = parseSmiles(source);
     const geometry = generateMoleculeGeometry(molecule);
     const systems = conjugatedPiSystems(molecule);
