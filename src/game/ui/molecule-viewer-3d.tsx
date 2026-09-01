@@ -6,6 +6,9 @@ import { OrbitalEnergyDiagram, orbitalLabel } from './orbital-energy-diagram';
 import {
   PI_SURFACE_ISOLATION,
   PI_SURFACE_SUBTRACT,
+  SIGMA_ANTIBONDING_NODE_GAP,
+  SIGMA_LOBE_AXIAL_SCALE,
+  cappedAntibondingSigmaLobeSize,
   metaballSupportRadius,
   piLobeOffset,
   piSurfaceResolution,
@@ -459,10 +462,7 @@ function addPiOrbital(
   const system = systems[orbital.piSystem];
   if (system === undefined) return [];
   const normal = normals[orbital.piSystem]!;
-  const base = new THREE.Color(PI_SYSTEM_COLORS[orbital.piSystem % PI_SYSTEM_COLORS.length]!);
-  const colors = ([-1, 1] as const).map((phase) => (
-    base.clone().offsetHSL(0, phase < 0 ? 0.08 : -0.08, phase < 0 ? -0.13 : 0.18).getHex()
-  )) as [number, number];
+  const colors = orbitalPhaseColors(PI_SYSTEM_COLORS[orbital.piSystem % PI_SYSTEM_COLORS.length]!);
   const surfaces = addMergedPiSurfaces(
     group, system.atoms, positions, normal, colors, 0.5, 0.58, 4, orbital.coefficients,
   );
@@ -492,11 +492,21 @@ function addOrbital(
   return addLonePairOrbital(group, molecule, positions, orbital);
 }
 
-const ORBITAL_PHASE_COLORS = { negative: 0xd16b46, positive: 0x3978c5 } as const;
+function orbitalPhaseColors(baseColor: number): [negative: number, positive: number] {
+  const base = new THREE.Color(baseColor);
+  return [
+    base.clone().offsetHSL(0, 0, -0.16).getHex(),
+    base.clone().offsetHSL(0, 0, 0.18).getHex(),
+  ];
+}
+
+const LOCALIZED_ORBITAL_PHASE_COLORS = orbitalPhaseColors(PI_SYSTEM_COLORS[0]!);
 
 function orbitalMaterial(coefficient: number): THREE.MeshPhongMaterial {
   return new THREE.MeshPhongMaterial({
-    color: coefficient < 0 ? ORBITAL_PHASE_COLORS.negative : ORBITAL_PHASE_COLORS.positive,
+    color: coefficient < 0
+      ? LOCALIZED_ORBITAL_PHASE_COLORS[0]
+      : LOCALIZED_ORBITAL_PHASE_COLORS[1],
     transparent: true,
     opacity: 0.48,
     depthWrite: false,
@@ -513,7 +523,7 @@ function localizedOrbitalLobe(
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), orbitalMaterial(coefficient));
   mesh.position.copy(center);
-  mesh.scale.set(size * 0.7, size * 1.35, size * 0.7);
+  mesh.scale.set(size * 0.7, size * SIGMA_LOBE_AXIAL_SCALE, size * 0.7);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
   mesh.renderOrder = 4;
   return mesh;
@@ -537,13 +547,30 @@ function addSigmaOrbital(
   const entries = [...orbital.coefficients.entries()];
   if (entries.length !== 2) return [];
   const largest = Math.max(...entries.map(([, coefficient]) => Math.abs(coefficient)));
+  const points = entries.map(([atom]) => positions.get(atom)!);
+  const bondAxis = points[1]!.clone().sub(points[0]!);
+  const bondLength = bondAxis.length();
+  bondAxis.normalize();
+  const midpoint = points[0]!.clone().add(points[1]!).multiplyScalar(0.5);
+  const antibonding = entries[0]![1] * entries[1]![1] < 0;
+  const requestedSizes = entries.map(([, coefficient]) => {
+    const relative = Math.abs(coefficient) / largest;
+    return 0.42 * (0.45 + 0.55 * Math.sqrt(relative));
+  });
   const result: THREE.Mesh[] = [];
   entries.forEach(([atom, coefficient], index) => {
     const other = entries[1 - index]![0];
     const direction = positions.get(other)!.clone().sub(positions.get(atom)!).normalize();
-    const relative = Math.abs(coefficient) / largest;
-    const size = 0.42 * (0.45 + 0.55 * Math.sqrt(relative));
-    const center = positions.get(atom)!.clone().addScaledVector(direction, 0.2);
+    const size = antibonding
+      ? cappedAntibondingSigmaLobeSize(requestedSizes[index]!, bondLength)
+      : requestedSizes[index]!;
+    const center = antibonding
+      ? midpoint.clone().addScaledVector(
+        bondAxis,
+        (index === 0 ? -1 : 1)
+          * (size * SIGMA_LOBE_AXIAL_SCALE + SIGMA_ANTIBONDING_NODE_GAP / 2),
+      )
+      : positions.get(atom)!.clone().addScaledVector(direction, 0.2);
     const mesh = localizedOrbitalLobe(center, direction, size, coefficient);
     markOrbitalMesh(mesh, orbital);
     group.add(mesh);

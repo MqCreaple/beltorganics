@@ -11,12 +11,21 @@ import {
   PI_SURFACE_MAX_GRID_SPACING,
   PI_SURFACE_MIN_RESOLUTION,
   PI_SURFACE_SUBTRACT,
+  SIGMA_ANTIBONDING_NODE_GAP,
+  SIGMA_LOBE_AXIAL_SCALE,
+  cappedAntibondingSigmaLobeSize,
   metaballSupportRadius,
   piLobeOffset,
   piSurfaceResolution,
 } from '../src/game/ui/pi-surface-math';
 
 describe('merged pi surface geometry', () => {
+  it('caps antibonding sigma lobes so a nodal gap remains between them', () => {
+    const size = cappedAntibondingSigmaLobeSize(0.42, 0.74);
+    expect(2 * size * SIGMA_LOBE_AXIAL_SCALE + SIGMA_ANTIBONDING_NODE_GAP)
+      .toBeLessThanOrEqual(0.74 + Number.EPSILON);
+  });
+
   it('separates opposite lobe centers by one diameter', () => {
     const radius = 0.58;
     expect(piLobeOffset(radius) * 2).toBeCloseTo(radius * 2);

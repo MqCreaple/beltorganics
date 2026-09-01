@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { MolecularOrbital, OrbitalKind } from '../../chem';
 
 export interface OrbitalEnergyDiagramProps {
@@ -13,11 +13,40 @@ export interface OrbitalEnergyLevel {
   orbitals: MolecularOrbital[];
 }
 
+export interface OrbitalEnergyWindow {
+  lower: number;
+  upper: number;
+}
+
 const DEGENERACY_TOLERANCE_EV = 0.02;
 const COLLAPSE_AT = 5;
 const WIDTH = 260;
 const HEIGHT = 420;
 const MARGIN = { top: 22, right: 12, bottom: 26, left: 44 } as const;
+const MINIMUM_ENERGY_SPAN_EV = 0.25;
+const MAXIMUM_ZOOM_OUT = 32;
+
+export function zoomOrbitalEnergyWindow(
+  window: OrbitalEnergyWindow,
+  anchorEv: number,
+  scale: number,
+  minimumSpan = MINIMUM_ENERGY_SPAN_EV,
+  maximumSpan = Number.POSITIVE_INFINITY,
+): OrbitalEnergyWindow {
+  const span = window.upper - window.lower;
+  if (!(span > 0) || !(scale > 0)) return window;
+  const nextSpan = Math.min(maximumSpan, Math.max(minimumSpan, span * scale));
+  const anchorFraction = (anchorEv - window.lower) / span;
+  const lower = anchorEv - anchorFraction * nextSpan;
+  return { lower, upper: lower + nextSpan };
+}
+
+export function panOrbitalEnergyWindow(
+  window: OrbitalEnergyWindow,
+  deltaEv: number,
+): OrbitalEnergyWindow {
+  return { lower: window.lower + deltaEv, upper: window.upper + deltaEv };
+}
 
 /** Group adjacent, sorted orbitals whose displayed energies are degenerate. */
 export function groupOrbitalEnergyLevels(
@@ -60,15 +89,27 @@ function kindLabel(kind: OrbitalKind): string {
 
 export function OrbitalEnergyDiagram({ orbitals, selectedId, onSelect }: OrbitalEnergyDiagramProps) {
   const levels = useMemo(() => groupOrbitalEnergyLevels(orbitals), [orbitals]);
+  const automaticWindow = useMemo<OrbitalEnergyWindow>(() => {
+    if (levels.length === 0) return { lower: -1, upper: 1 };
+    const minimum = Math.min(...levels.map((level) => level.energyEv));
+    const maximum = Math.max(...levels.map((level) => level.energyEv));
+    const padding = Math.max(1, (maximum - minimum) * 0.06);
+    return { lower: minimum - padding, upper: maximum + padding };
+  }, [levels]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [hovered, setHovered] = useState<{ orbital: MolecularOrbital; left: number; top: number } | null>(null);
+  const [energyWindow, setEnergyWindow] = useState<OrbitalEnergyWindow>(automaticWindow);
+  const [isPanning, setIsPanning] = useState(false);
+  const drag = useRef<{
+    pointerId: number;
+    startClientY: number;
+    window: OrbitalEnergyWindow;
+  } | null>(null);
+
+  useEffect(() => setEnergyWindow(automaticWindow), [automaticWindow.lower, automaticWindow.upper]);
   if (levels.length === 0) return <aside className="orbital-energy-diagram empty">No molecular orbitals</aside>;
 
-  const minimum = Math.min(...levels.map((level) => level.energyEv));
-  const maximum = Math.max(...levels.map((level) => level.energyEv));
-  const padding = Math.max(1, (maximum - minimum) * 0.06);
-  const lower = minimum - padding;
-  const upper = maximum + padding;
+  const { lower, upper } = energyWindow;
   const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
   const plotLeft = MARGIN.left;
   const plotRight = WIDTH - MARGIN.right;
@@ -79,6 +120,15 @@ export function OrbitalEnergyDiagram({ orbitals, selectedId, onSelect }: Orbital
   const firstTick = Math.ceil(lower / tickStep) * tickStep;
   const ticks: number[] = [];
   for (let tick = firstTick; tick <= upper + 1e-9; tick += tickStep) ticks.push(tick);
+
+  const energyAtPointer = (svg: SVGSVGElement, clientY: number): number => {
+    const bounds = svg.getBoundingClientRect();
+    const viewY = Math.min(
+      HEIGHT - MARGIN.bottom,
+      Math.max(MARGIN.top, ((clientY - bounds.top) / bounds.height) * HEIGHT),
+    );
+    return upper - ((viewY - MARGIN.top) / plotHeight) * (upper - lower);
+  };
 
   const showHover = (event: MouseEvent, orbital: MolecularOrbital): void => {
     const panel = (event.currentTarget as SVGElement).closest('.orbital-energy-diagram')!;
@@ -91,8 +141,62 @@ export function OrbitalEnergyDiagram({ orbitals, selectedId, onSelect }: Orbital
   };
 
   return (
-    <aside className="orbital-energy-diagram" aria-label="Molecular orbital energy diagram">
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="Orbital energies in electron-volts">
+    <aside className={`orbital-energy-diagram ${isPanning ? 'panning' : ''}`} aria-label="Molecular orbital energy diagram">
+      <svg
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        role="img"
+        aria-label="Orbital energies in electron-volts; drag vertically to pan and scroll to zoom"
+        onWheel={(event) => {
+          event.preventDefault();
+          const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+            ? 16
+            : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? HEIGHT : 1;
+          const scale = Math.exp(Math.max(-1, Math.min(1, event.deltaY * unit * 0.0015)));
+          const anchor = energyAtPointer(event.currentTarget, event.clientY);
+          const automaticSpan = automaticWindow.upper - automaticWindow.lower;
+          setEnergyWindow((current) => zoomOrbitalEnergyWindow(
+            current,
+            anchor,
+            scale,
+            MINIMUM_ENERGY_SPAN_EV,
+            automaticSpan * MAXIMUM_ZOOM_OUT,
+          ));
+        }}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || (event.target as Element).closest('[role="button"]') !== null) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = {
+            pointerId: event.pointerId,
+            startClientY: event.clientY,
+            window: energyWindow,
+          };
+          setHovered(null);
+          setIsPanning(true);
+        }}
+        onPointerMove={(event) => {
+          const active = drag.current;
+          if (active === null || active.pointerId !== event.pointerId) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const renderedPlotHeight = bounds.height * plotHeight / HEIGHT;
+          const span = active.window.upper - active.window.lower;
+          const deltaEv = (event.clientY - active.startClientY) / renderedPlotHeight * span;
+          setEnergyWindow(panOrbitalEnergyWindow(active.window, deltaEv));
+        }}
+        onPointerUp={(event) => {
+          if (drag.current?.pointerId !== event.pointerId) return;
+          drag.current = null;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          setIsPanning(false);
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+          setIsPanning(false);
+        }}
+        onLostPointerCapture={() => {
+          drag.current = null;
+          setIsPanning(false);
+        }}
+      >
         {ticks.map((tick) => {
           const y = energyY(tick);
           return (

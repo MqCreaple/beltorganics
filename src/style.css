@@ -218,6 +218,7 @@ body {
   overflow: hidden;
   border-left: 1px solid #d7deea;
   background: #fbfcfe;
+  touch-action: none;
 }
 .orbital-energy-diagram.empty {
   display: grid;
@@ -229,6 +230,11 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+  cursor: grab;
+  user-select: none;
+}
+.orbital-energy-diagram.panning svg {
+  cursor: grabbing;
 }
 .orbital-energy-tick line {
   stroke: #d9dfe8;

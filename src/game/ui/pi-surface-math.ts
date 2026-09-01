@@ -6,6 +6,17 @@ export const PI_SURFACE_MAX_GRID_SPACING = 0.25;
 export const PI_SURFACE_MIN_RESOLUTION = 28;
 /** Guard against unbounded cubic allocations for user-created macromolecules. */
 export const PI_SURFACE_MAX_RESOLUTION = 160;
+export const SIGMA_LOBE_AXIAL_SCALE = 1.35;
+export const SIGMA_ANTIBONDING_NODE_GAP = 0.12;
+
+/** Keep each antibonding lobe on its own side of the nodal gap. */
+export function cappedAntibondingSigmaLobeSize(
+  requestedSize: number,
+  bondLength: number,
+): number {
+  const availableDiameter = Math.max(0, bondLength - SIGMA_ANTIBONDING_NODE_GAP);
+  return Math.min(requestedSize, availableDiameter / (2 * SIGMA_LOBE_AXIAL_SCALE));
+}
 
 /** Opposite phases barely meet when each center is one lobe radius away. */
 export function piLobeOffset(radius: number): number {

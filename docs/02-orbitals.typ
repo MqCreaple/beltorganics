@@ -51,7 +51,7 @@ A molecule's electrons are not scattered at random: each one settles into an *or
   caption: [Electrons fill the lowest orbitals first, two per orbital. The higher an orbital, the more energy it costs to put an electron there.],
 )
 
-The inspector can show these orbitals directly. Its *Orbitals* layer places a molecular-orbital energy diagram beside the 3D molecule: every σ, π and lone-pair level appears on an approximate electron-volt (eV) scale. Hovering a level identifies it; clicking it redraws that one signed wavefunction, including nodes and unequal weight on different atoms. Degenerate levels share a row, and very large groups can be expanded from an ellipsis. The eV calibration is a game estimate rather than a laboratory prediction, but the ordering and gaps are meaningful.
+The inspector can show these orbitals directly. Its *Orbitals* layer places a molecular-orbital energy diagram beside the 3D molecule: every σ, π and lone-pair level appears on an approximate electron-volt (eV) scale. Hovering a level identifies it; clicking it redraws that one signed wavefunction, including nodes and unequal weight on different atoms. Opposite signs use dark and light versions of one hue, while an antibonding σ orbital leaves a visible gap at its node. Degenerate levels share a row, and very large groups can be expanded from an ellipsis. Scroll over the diagram to zoom its energy axis, or drag vertically to inspect another energy range; its horizontal layout stays fixed. The eV calibration is a game estimate rather than a laboratory prediction, but the ordering and gaps are meaningful.
 
 == σ and π bonding <sec:sigma-pi-bonding>
 
