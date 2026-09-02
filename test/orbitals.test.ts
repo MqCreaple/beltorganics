@@ -68,6 +68,26 @@ describe("molecular orbitals", () => {
     );
   });
 
+  it("equalizes sigma energies for resonance-equivalent benzene bonds", () => {
+    const molecule = parseSmiles("c1ccccc1");
+    const carbonBonds = molecule.bonds().filter((bondId) => {
+      const { source, target } = molecule.getBond(bondId);
+      return molecule.getAtom(source).element === "C"
+        && molecule.getAtom(target).element === "C";
+    });
+    const orbitals = molecularOrbitals(molecule).orbitals;
+    const bondingEnergies = carbonBonds.map((bondId) => {
+      const { source, target } = molecule.getBond(bondId);
+      return orbitals.find((orbital) =>
+        orbital.kind === "sigma"
+        && orbital.electrons === 2
+        && orbital.coefficients.has(source)
+        && orbital.coefficients.has(target)
+      )!.energyEv;
+    });
+    expect(Math.max(...bondingEnergies) - Math.min(...bondingEnergies)).toBeLessThan(1e-8);
+  });
+
   it("raises an alkoxide lone pair toward its measured detachment energy", () => {
     const oxygenLonePairEnergy = (smiles: string): number => {
       const molecule = parseSmiles(smiles);

@@ -33,9 +33,9 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Source-block label: the substance's IUPAC name once known, else its SMILES. */
+/** Source-block label: resolved substance name, else its molecular formula. */
 function sourceLabelText(formula: string): string {
-  return moleculeRegistry.substanceName(formula) ?? formula;
+  return moleculeRegistry.substanceDisplayName(formula);
 }
 
 /**

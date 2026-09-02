@@ -12,4 +12,9 @@ export type BlockKind = 'source';
  * carries the function; game-layer code (see `src/game/ui/`) builds the
  * actual DOM, e.g. with Preact/JSX.
  */
-export type BlockUI = () => HTMLElement;
+export interface BlockUIElement extends HTMLElement {
+  /** Release framework/rendering resources before the host is detached. */
+  dispose?: () => void;
+}
+
+export type BlockUI = () => BlockUIElement;

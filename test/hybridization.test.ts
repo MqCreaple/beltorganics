@@ -52,6 +52,13 @@ describe('hybridization: cases that align with VSEPR', () => {
     expect(hybridizationOf(m, n)).toBe('sp3');
   });
 
+  it('does not hybridize an isolated iodide ion', () => {
+    const m = new Molecule();
+    const iodide = m.addAtom('I', { formalCharge: -1 });
+    expect(hybridizationOf(m, iodide)).toBeUndefined();
+    expect(hybridizations(m).has(iodide)).toBe(false);
+  });
+
   it('methyl anion (simple carbanion): sp3, pyramidal', () => {
     // VSEPR: 3 sigma bonds + 1 lone pair = 4 domains => sp3. CH3- is
     // pyramidal (lone pair in an sp3 orbital); carbanions are sp2 only under
@@ -188,7 +195,7 @@ describe('hybridization: cases that defy VSEPR (conjugated lone pairs)', () => {
     expect(formulaToString(m.molecularFormula())).toBe('C3H5');
   });
 
-  it('hybridizations() covers every non-hydrogen atom', () => {
+  it('hybridizations() covers every bonded non-hydrogen atom', () => {
     const m = new Molecule();
     const c = m.addAtom('C');
     const o = m.addAtom('O');

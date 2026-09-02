@@ -253,7 +253,10 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
               key={option.value}
               type="button"
               aria-pressed={layer === option.value}
-              onClick={() => setLayer(option.value)}
+              onClick={() => {
+                setLayer(option.value);
+                if (option.value === 'orbitals') setRepresentation('ball-stick');
+              }}
             >
               {option.label}
             </button>
@@ -270,6 +273,8 @@ export function MoleculeViewer3D({ molecule, geometry }: MoleculeViewer3DProps) 
           <button
             type="button"
             aria-pressed={representation === 'space-fill'}
+            disabled={layer === 'orbitals'}
+            title={layer === 'orbitals' ? 'Orbital surfaces require the ball-and-stick view' : undefined}
             onClick={() => setRepresentation('space-fill')}
           >
             Space filling
@@ -803,7 +808,8 @@ function atomColor(molecule: Molecule, atom: AtomId, layer: MoleculeViewerLayer,
     const hybridization = hybridizationOf(molecule, atom);
     if (hybridization === 'sp') return 0xf4c24f;
     if (hybridization === 'sp2') return 0x35b9a9;
-    return 0x9473d3;
+    if (hybridization === 'sp3') return 0x9473d3;
+    return ELEMENTS[element].displayColor;
   }
   return ELEMENTS[element].displayColor;
 }
@@ -827,7 +833,11 @@ function atomDescription(
     const value = Math.abs(charge) < 0.0005 ? '0.000' : `${charge > 0 ? '+' : ''}${charge.toFixed(3)}`;
     return `${name} · partial charge ${value}`;
   }
-  if (layer === 'geometry') return `${name} · ${hybridizationOf(molecule, atom) ?? '1s'} geometry`;
+  if (layer === 'geometry') {
+    const hybridization = hybridizationOf(molecule, atom);
+    const geometry = element === 'H' ? 's' : hybridization ?? 'unhybridized';
+    return `${name} · ${geometry} geometry`;
+  }
   if (layer === 'orbitals') {
     return `${name} · choose a level in the orbital energy diagram`;
   }

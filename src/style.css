@@ -158,6 +158,13 @@ body {
   color: #172033;
   background: #e9eef6;
 }
+.molecule-viewer-toolbar button:disabled {
+  border-color: transparent;
+  background: #f1f3f6;
+  color: #a2a9b4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 .molecule-viewer-toolbar button[aria-pressed='true'] {
   border-color: #7e9cc4;
   background: #dfeafb;

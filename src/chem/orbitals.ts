@@ -1,7 +1,7 @@
 import { symmetricEigenDecomposition } from "../math";
 import { conjugatedPiSystems } from "./conjugation";
 import { ELEMENTS } from "./elements";
-import { displayedLonePairCount } from "./geometry";
+import { displayedLonePairCount, resonanceAdjustedBondLengths } from "./geometry";
 import {
   partialCharges,
   peoeElectronegativity,
@@ -141,6 +141,7 @@ function sigmaOrbitals(
   molecule: Molecule,
   charges: ReadonlyMap<AtomId, number>,
 ): MolecularOrbital[] {
+  const resonanceAdjusted = resonanceAdjustedBondLengths(molecule);
   return molecule.bonds().flatMap((bondId, bondIndex) => {
     const bond = molecule.getBond(bondId);
     const atoms = [bond.source, bond.target] as const;
@@ -155,9 +156,13 @@ function sigmaOrbitals(
         + partialChargeShiftEv,
       );
     });
+    // Equivalent resonance forms exchange the displayed single and double
+    // bonds. Use their shared 1.5 effective order so a Kekule drawing cannot
+    // split otherwise equivalent sigma levels (benzene, acetate, ...).
+    const effectiveBondOrder = resonanceAdjusted.has(bondId) ? 1.5 : bond.order;
     const coupling = (
       SIGMA_COUPLING_EV
-      + (bond.order - 1) * MULTIPLE_BOND_SIGMA_COUPLING_EV
+      + (effectiveBondOrder - 1) * MULTIPLE_BOND_SIGMA_COUPLING_EV
     ) / ORBITAL_ENERGY_SCALE_EV;
     const solved = symmetricEigenDecomposition([
       [diagonal[0]!, coupling],

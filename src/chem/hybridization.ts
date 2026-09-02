@@ -65,12 +65,13 @@ export function hasConjugableLonePair(element: ElementSymbol, formalCharge: numb
 }
 
 /**
- * Hybridization of one atom; `undefined` for hydrogens (the game only labels
- * non-hydrogen elements, matching the design docs).
+ * Hybridization of one bonded heavy atom. Hydrogen uses an unhybridized s
+ * orbital, while an isolated atom/ion has no molecular hybridization, so both
+ * cases return `undefined` and the viewer labels them explicitly.
  */
 export function hybridizationOf(molecule: Molecule, atom: AtomId): Hybridization | undefined {
   const view = molecule.getAtom(atom);
-  if (view.element === 'H') return undefined;
+  if (view.element === 'H' || molecule.neighbors(atom).length === 0) return undefined;
 
   const fromMultipleBonds = labelFromMultipleBonds(molecule, atom);
   if (fromMultipleBonds !== null) return fromMultipleBonds;
@@ -90,7 +91,7 @@ export function hybridizationOf(molecule: Molecule, atom: AtomId): Hybridization
   return 'sp3';
 }
 
-/** Hybridization of every non-hydrogen atom, keyed by atom id. */
+/** Hybridization of every bonded non-hydrogen atom, keyed by atom id. */
 export function hybridizations(molecule: Molecule): Map<AtomId, Hybridization> {
   const result = new Map<AtomId, Hybridization>();
   for (const atom of molecule.atoms()) {

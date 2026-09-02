@@ -1,7 +1,13 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { render } from 'preact';
 import { bindShortcut } from '../shortcuts';
-import type { Block } from '../../world';
+import type { Block, BlockUIElement } from '../../world';
+
+/** Unmount framework resources before removing a block UI host. */
+export function disposeBlockUIElement(element: BlockUIElement): void {
+  element.dispose?.();
+  element.remove();
+}
 
 /**
  * HUD panel shown when the player activates a block that carries a `BlockUI`.
@@ -27,7 +33,7 @@ export function BlockPanel({ block, onClose }: BlockPanelProps) {
     const element = block.ui();
     host.append(element);
     return () => {
-      element.remove();
+      disposeBlockUIElement(element);
     };
   }, [block]);
 
