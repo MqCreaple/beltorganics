@@ -1,4 +1,5 @@
 import { parseSmiles } from './smiles';
+import { formulaToString } from './formula';
 import { generateMoleculeGeometry } from './geometry';
 import type { Molecule } from './molecule';
 import type { MoleculeGeometry } from './geometry';
@@ -210,6 +211,12 @@ export class MoleculeRegistry {
    * undefined if not fetched yet or unknown). */
   substanceName(smiles: string): string | undefined {
     return this.#substanceNames.get(smiles);
+  }
+
+  /** Human-readable label: resolved name, otherwise molecular formula. */
+  substanceDisplayName(smiles: string): string {
+    return this.substanceName(smiles)
+      ?? formulaToString(this.get(smiles).molecularFormula());
   }
 
   /** Synchronous access to the resolved common name (PubChem `Title`), if any. */

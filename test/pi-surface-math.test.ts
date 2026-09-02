@@ -11,12 +11,29 @@ import {
   PI_SURFACE_MAX_GRID_SPACING,
   PI_SURFACE_MIN_RESOLUTION,
   PI_SURFACE_SUBTRACT,
+  SIGMA_ANTIBONDING_NODE_GAP,
+  SIGMA_LOBE_AXIAL_SCALE,
+  cappedAntibondingSigmaLobeSize,
   metaballSupportRadius,
   piLobeOffset,
   piSurfaceResolution,
+  sigmaAntibondingCenterOffset,
+  sigmaBondingCenterOffset,
 } from '../src/game/ui/pi-surface-math';
 
 describe('merged pi surface geometry', () => {
+  it('caps antibonding sigma lobes so a nodal gap remains between them', () => {
+    const size = cappedAntibondingSigmaLobeSize(0.42, 0.74);
+    expect(2 * size * SIGMA_LOBE_AXIAL_SCALE + SIGMA_ANTIBONDING_NODE_GAP)
+      .toBeLessThanOrEqual(0.74 + Number.EPSILON);
+  });
+
+  it('moves sigma density inward for bonding and outward for antibonding', () => {
+    const halfBond = 1.5 / 2;
+    expect(sigmaBondingCenterOffset(1.5)).toBeLessThan(halfBond);
+    expect(sigmaAntibondingCenterOffset(1.5)).toBeGreaterThan(halfBond);
+  });
+
   it('separates opposite lobe centers by one diameter', () => {
     const radius = 0.58;
     expect(piLobeOffset(radius) * 2).toBeCloseTo(radius * 2);
@@ -40,7 +57,9 @@ describe('merged pi surface geometry', () => {
   });
 
   it('raises the field resolution for the beta-carotene pi chain', () => {
-    const source = DEMO_SOURCES.at(-1)![2];
+    const source = [...DEMO_SOURCES]
+      .sort((first, second) => first[2].length - second[2].length)
+      .at(-1)![2];
     const molecule = parseSmiles(source);
     const geometry = generateMoleculeGeometry(molecule);
     const systems = conjugatedPiSystems(molecule);

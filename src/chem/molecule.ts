@@ -305,16 +305,21 @@ export class Molecule {
    * used to derive implicit hydrogens.
    *
    * - Neutral atoms saturate to their valence (hands): C 4, N 3, O 2, H 1.
-   * - Anionic atoms saturate to the octet-based capacity
+   * - Anionic atoms normally saturate to the octet-based capacity
    *   (valence + formal charge): a carboxylate O- with one bond needs no
-   *   hydrogen, and a carbanion C- keeps its three bonds.
+   *   hydrogen, and a carbanion C- keeps its three bonds. Brevium is the
+   *   electron-deficient exception: B- can complete four bonds (BH4-).
    * - Positively charged atoms are assumed to be drawn with explicit
    *   hydrogens (the SMILES-style convention) and receive none here.
    */
   #hydrogenCapacity(atom: AtomId): number {
     const { element, formalCharge } = this.getAtom(atom);
     if (formalCharge > 0) return 0;
-    if (formalCharge < 0) return ELEMENTS[element].valence + formalCharge;
+    if (formalCharge < 0) {
+      return element === 'B'
+        ? ELEMENTS[element].valence - formalCharge
+        : ELEMENTS[element].valence + formalCharge;
+    }
     return ELEMENTS[element].valence;
   }
 
@@ -378,13 +383,15 @@ export class Molecule {
     for (const atom of this.atoms()) {
       const view = this.getAtom(atom);
       const used = this.bondOrderSum(atom);
-      if (used > ELEMENTS[view.element].valence) {
+      const maximumValence = Math.max(...ELEMENTS[view.element].allowedValences)
+        + (view.element === 'B' ? Math.max(0, -view.formalCharge) : 0);
+      if (used > maximumValence) {
         issues.push({
           code: 'valence-exceeded',
           atom,
           message:
-            `${view.element} uses ${used} hands but has valence ` +
-            `${ELEMENTS[view.element].valence} (may be intentional for a charged species)`,
+            `${view.element} uses ${used} hands but its maximum allowed valence is ` +
+            `${maximumValence} (may be intentional for a charged species)`,
         });
       }
       if (view.stereo !== undefined) {

@@ -158,6 +158,13 @@ body {
   color: #172033;
   background: #e9eef6;
 }
+.molecule-viewer-toolbar button:disabled {
+  border-color: transparent;
+  background: #f1f3f6;
+  color: #a2a9b4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 .molecule-viewer-toolbar button[aria-pressed='true'] {
   border-color: #7e9cc4;
   background: #dfeafb;
@@ -166,6 +173,7 @@ body {
 }
 .molecule-viewer-representation {
   flex: 0 0 auto;
+  align-items: center;
   padding-left: 0.6rem;
   border-left: 1px solid #d7deea;
 }
@@ -174,9 +182,19 @@ body {
   height: clamp(310px, 48vh, 430px);
   min-height: 0;
 }
-.molecule-viewer-host {
+.molecule-viewer-content {
   position: absolute;
   inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.molecule-viewer-stage.has-orbital-diagram .molecule-viewer-content {
+  grid-template-columns: minmax(0, 7fr) minmax(178px, 3fr);
+}
+.molecule-viewer-host {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
 }
 .molecule-viewer-canvas {
   display: block;
@@ -197,6 +215,96 @@ body {
   background: rgba(255, 255, 255, 0.82);
   color: #4a5668;
   backdrop-filter: blur(6px);
+}
+.has-orbital-diagram .molecule-viewer-reset {
+  right: calc(30% + 0.65rem);
+}
+.orbital-energy-diagram {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid #d7deea;
+  background: #fbfcfe;
+  touch-action: none;
+}
+.orbital-energy-diagram.empty {
+  display: grid;
+  place-items: center;
+  color: #6b7688;
+  font-size: 12px;
+}
+.orbital-energy-diagram svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  user-select: none;
+}
+.orbital-energy-diagram.panning svg {
+  cursor: grabbing;
+}
+.orbital-energy-tick line {
+  stroke: #d9dfe8;
+  stroke-width: 1;
+}
+.orbital-energy-tick text {
+  fill: #7a8597;
+  font-size: 10px;
+  text-anchor: end;
+}
+.orbital-energy-axis {
+  stroke: #8d98a9;
+  stroke-width: 1.2;
+}
+.orbital-energy-axis-title {
+  fill: #667286;
+  font-size: 11px;
+  text-anchor: middle;
+}
+.orbital-energy-dash {
+  stroke: #526278;
+  stroke-width: 3;
+  cursor: pointer;
+  transition: stroke-width 100ms ease, stroke 100ms ease;
+}
+.orbital-energy-dash.empty {
+  stroke: #91a0b5;
+}
+.orbital-energy-dash:hover,
+.orbital-energy-dash:focus {
+  stroke: #246eb7;
+  stroke-width: 5;
+  outline: none;
+}
+.orbital-energy-dash.selected {
+  stroke: #d14f45;
+  stroke-width: 5;
+}
+.orbital-energy-ellipsis {
+  fill: #4d6380;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.orbital-energy-hover {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 0.08rem;
+  min-width: 120px;
+  padding: 0.42rem 0.52rem;
+  border: 1px solid #c3cedd;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 5px 16px rgba(42, 54, 75, 0.16);
+  color: #536074;
+  font-size: 10px;
+  line-height: 1.3;
+  pointer-events: none;
+}
+.orbital-energy-hover strong {
+  color: #25364f;
+  font-size: 11px;
 }
 .molecule-viewer-orbital-tooltip {
   position: absolute;

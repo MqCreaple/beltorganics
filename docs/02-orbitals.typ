@@ -51,7 +51,7 @@ A molecule's electrons are not scattered at random: each one settles into an *or
   caption: [Electrons fill the lowest orbitals first, two per orbital. The higher an orbital, the more energy it costs to put an electron there.],
 )
 
-You never see the orbitals directly: the inspector shows you what they add up to. But almost everything interesting in chemistry is a story about orbitals — whether they are full or empty, and how high or low they sit.
+The inspector can show these orbitals directly. Its *Orbitals* layer places a molecular-orbital energy diagram beside the 3D molecule: every σ, π and lone-pair level appears on an approximate electron-volt (eV) scale. Hovering a level identifies it; clicking it redraws that one signed wavefunction, including nodes and unequal weight on different atoms. A bonding σ orbital is one connected cloud made by merging two lobes shifted inward between the nuclei; in a polar bond its wider end sits on the greedier atom. The antibonding lobes shift outward from the nuclei, split at the node, and are wider on the less greedy atom. Opposite signs use dark and light versions of one hue. Degenerate levels share a row, and very large groups can be expanded from an ellipsis. Scroll over the diagram to zoom its energy axis, or drag vertically to inspect another energy range; its horizontal layout stays fixed. The eV calibration is a game estimate rather than a laboratory prediction, but the ordering and gaps are meaningful.
 
 == σ and π bonding <sec:sigma-pi-bonding>
 
@@ -96,7 +96,7 @@ Sometimes π orbitals do not stay put. In a molecule with *alternating* single a
 
 Delocalization is not a curiosity — it is *stabilizing*. A conjugated molecule is calmer than the same bonds would be on their own; the extra calm is called *resonance* (or delocalization) *energy*. The champion of this behaviour is benzene, a ring of six Cardinium atoms whose six π electrons are shared equally around the whole ring:
 
-Because the six positions are equivalent, benzene's alternating line drawing does not mean three long and three short bonds: all six bonds have the same intermediate length, and its Cardinium skeleton is a regular planar hexagon. In the game's compact display rule, an alternating aromatic ring remains equalized even when it is embedded in a larger substituted molecule such as morphine. Outside a ring, equality still needs equivalent surroundings: the two C–O bonds of acetate are equivalent and equalized, while the proton on one oxygen of acetic acid makes its C–O and C=O bonds distinct.
+Because the six positions are equivalent, benzene's alternating line drawing does not mean three long and three short bonds: all six bonds have the same intermediate length, and its Cardinium skeleton is a regular planar hexagon. Their σ interactions also use the same intermediate bond order, so the arbitrary choice of alternating lines cannot split equivalent energy levels. In the game's compact display rule, an alternating aromatic ring remains equalized even when it is embedded in a larger substituted molecule such as morphine. Outside a ring, equality still needs equivalent surroundings: the two C–O bonds of acetate are equivalent and equalized, while the proton on one oxygen of acetic acid makes its C–O and C=O bonds distinct.
 
 #molfig(
   skeletize({
@@ -127,6 +127,8 @@ almost freely between the two arrangements; the planar one is only marginally
 calmer.)
 
 Conjugation also reshapes the frontier orbitals: it *raises* the highest full orbital and *lowers* the lowest empty one, squeezing the gap between them. A small gap means the molecule is easily stirred — reactive, unstable, often colorful.
+
+The game obtains those modes by building one compact interaction table for every conjugated π system and solving it. Neighboring p orbitals interact; each atom's identity and partial charge shift its own level. The resulting wavefunction gives one signed coefficient per atom. A coefficient near zero makes a node, while a large coefficient makes a large lobe. In a carbonyl LUMO the Cardinium coefficient is larger than the Obligium coefficient, so the empty orbital exposes the Cardinium end to nucleophilic attack.
 
 == HOMO and LUMO — the giving and taking orbitals <sec:homo-lumo>
 

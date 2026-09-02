@@ -166,9 +166,16 @@ describe('parseSmiles', () => {
     expect(connectedComponents(m)).toBe(2);
   });
 
-  it('throws on invalid or unsupported input', () => {
+  it('accepts the supported element set and rejects deferred elements', () => {
     expect(() => parseSmiles('not a smiles')).toThrow();
-    expect(() => parseSmiles('F')).toThrow(); // fluorine is not a game element
+    expect(formula(parseSmiles('B'))).toBe('H3B');
+    expect(formula(parseSmiles('CF'))).toBe('CH3F');
+    expect(formula(parseSmiles('CCl'))).toBe('CH3Cl');
+    expect(formula(parseSmiles('CBr'))).toBe('CH3Br');
+    expect(formula(parseSmiles('CI'))).toBe('CH3I');
+    for (const unsupported of ['S', 'P', '[Li+]', '[Mg+2]']) {
+      expect(() => parseSmiles(unsupported)).toThrow(/not in the game/);
+    }
   });
 });
 

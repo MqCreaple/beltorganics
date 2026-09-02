@@ -154,6 +154,12 @@ describe('MoleculeRegistry substance name lookup', () => {
     vi.unstubAllGlobals();
   });
 
+  it('uses the molecular formula as the human-readable fallback', () => {
+    const registry = new MoleculeRegistry({ fetch: async () => new Response('Not Found', { status: 404 }) });
+    expect(registry.substanceDisplayName('CCO')).toBe('C2H6O');
+    expect(registry.substanceDisplayName('[I-]')).toBe('I');
+  });
+
   it('fetches from PubChem and caches the name', async () => {
     const { fetchFn, calls } = mockFetch([
       { match: (u) => u.includes('pubchem'), respond: pubchemName('butane') },

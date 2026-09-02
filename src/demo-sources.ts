@@ -2,8 +2,10 @@
 export const DEMO_SOURCES: ReadonlyArray<readonly [number, number, string]> = [
   [0, 0, 'O'],
   [3, 0, 'CCO'],
+  [6, 0, 'CC[O-]'],
   [0, 3, 'c1ccccc1'],
   [-3, 2, 'O=C=O'],
+  [-1, -1, 'CC(=O)C'],
   [2, -3, 'CC(=O)O'],
   [3, -4, 'CC(=O)[O-]'],
   [-4, -2, 'N'],
@@ -19,4 +21,11 @@ export const DEMO_SOURCES: ReadonlyArray<readonly [number, number, string]> = [
   [-3, 7, 'C#N'],
   [-1, 7, 'C=CC#CC=C'],
   [1, 7, 'CC2(C)CCCC(\\C)=C2\\C=C\\C(\\C)=C\\C=C\\C(\\C)=C\\C=C\\C=C(/C)\\C=C\\C=C(/C)\\C=C\\C1=C(/C)CCCC1(C)C'],
+  [-5, 9, 'B'],
+  [-3, 9, '[BH4-]'],
+  [-1, 9, 'CCl'],
+  [1, 9, 'CI'],
+  [3, 9, '[Cl-]'],
+  [5, 9, '[I-]'],
+  [7, 9, 'CC(=O)Cl'],
 ];

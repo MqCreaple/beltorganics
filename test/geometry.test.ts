@@ -231,6 +231,13 @@ describe('topology-derived 3D molecular geometry', () => {
     expect(donorNitrogens.map((atom) => displayedLonePairCount(adenine, atom))).toEqual([0, 0]);
   });
 
+  it('does not draw a lone pair on the four-coordinate boron in borohydride', () => {
+    const borohydride = parseSmiles('[BH4-]');
+    const boron = borohydride.atoms().find((atom) => borohydride.getAtom(atom).element === 'B')!;
+    expect(borohydride.bondOrderSum(boron)).toBe(4);
+    expect(displayedLonePairCount(borohydride, boron)).toBe(0);
+  });
+
   it.each(DEMO_SOURCES.map(([, , smiles]) => [smiles]))('satisfies the geometry rules for demo molecule %s', (smiles) => {
     const molecule = parseSmiles(smiles);
     const issues = geometryIssues(molecule, generateMoleculeGeometry(molecule));

@@ -1,46 +1,9 @@
 import { hybridizationOf } from './hybridization';
+import { ELEMENTS } from './elements';
 import type { AtomId, Molecule } from './molecule';
-import type { ElementSymbol } from './types';
-import type { Hybridization } from './hybridization';
+import type { PeoeParameters } from './types';
 
 /** Coefficients for the PEOE orbital-electronegativity polynomial. */
-interface PeoeParameters {
-  a: number;
-  b: number;
-  c: number;
-}
-
-/**
- * Gasteiger-Marsili parameters used by BeltOrganics.
- *
- * The numbers and their sources are recorded in
- * `docs/research-chemistry.md` section 8. They are deliberately kept here,
- * rather than on `ElementInfo`, because they describe an element in a
- * particular hybridization state. Doubly bonded Obligium is sp2 in the
- * current labeler, so its rarely encountered sp entry uses the same fit.
- */
-const PEOE_PARAMETERS: Record<
-  ElementSymbol,
-  PeoeParameters | Record<Hybridization, PeoeParameters>
-> = {
-  H: { a: 7.17, b: 6.24, c: -0.56 },
-  C: {
-    sp3: { a: 7.98, b: 9.18, c: 1.88 },
-    sp2: { a: 8.79, b: 9.32, c: 1.51 },
-    sp: { a: 10.39, b: 9.45, c: 0.73 },
-  },
-  N: {
-    sp3: { a: 11.54, b: 10.82, c: 1.36 },
-    sp2: { a: 12.87, b: 11.15, c: 0.85 },
-    sp: { a: 15.68, b: 11.7, c: -0.27 },
-  },
-  O: {
-    sp3: { a: 14.18, b: 12.92, c: 1.39 },
-    sp2: { a: 17.07, b: 13.79, c: 0.47 },
-    sp: { a: 17.07, b: 13.79, c: 0.47 },
-  },
-};
-
 export interface PartialChargeOptions {
   /** Number of charge-equalization passes. Default: 8. */
   iterations?: number;
@@ -51,21 +14,19 @@ export interface PartialChargeOptions {
 const DEFAULT_ITERATIONS = 8;
 const DEFAULT_DAMPING = 0.5;
 
-/** Evaluate an atom's effective electronegativity at partial charge `q`. */
-function electronegativity(parameters: PeoeParameters, q: number): number {
+/** Evaluate an atom's effective orbital electronegativity at charge `q`. */
+export function peoeElectronegativity(parameters: PeoeParameters, q: number): number {
   return parameters.a + parameters.b * q + parameters.c * q * q;
 }
 
-function parametersFor(molecule: Molecule, atom: AtomId): PeoeParameters {
+export function peoeParametersFor(molecule: Molecule, atom: AtomId): PeoeParameters {
   const { element } = molecule.getAtom(atom);
-  const parameters = PEOE_PARAMETERS[element];
-  if (element === 'H') return parameters as PeoeParameters;
+  const parameters = ELEMENTS[element].peoe;
   const hybridization = hybridizationOf(molecule, atom);
-  // hybridizationOf only returns undefined for Habitium, handled above.
-  if (hybridization === undefined) {
-    throw new Error(`partialCharges: missing hybridization for ${atom}`);
-  }
-  return (parameters as Record<Hybridization, PeoeParameters>)[hybridization];
+  const selected = parameters[hybridization ?? 'sp3']
+    ?? parameters.sp3 ?? parameters.sp2 ?? parameters.sp ?? parameters['*'];
+  if (selected === undefined) throw new Error(`partialCharges: missing PEOE parameters for ${element}`);
+  return selected;
 }
 
 /**
@@ -144,7 +105,7 @@ export function partialCharges(
 ): Map<AtomId, number> {
   const { iterations, damping } = validateOptions(options);
   const atoms = molecule.atoms();
-  const parameters = new Map(atoms.map((atom) => [atom, parametersFor(molecule, atom)]));
+  const parameters = new Map(atoms.map((atom) => [atom, peoeParametersFor(molecule, atom)]));
   const charges = new Map(atoms.map((atom) => [atom, molecule.getAtom(atom).formalCharge]));
   const bonds = orderedBonds(molecule);
 
@@ -153,7 +114,7 @@ export function partialCharges(
     const chi = new Map(
       atoms.map((atom) => {
         const parametersForAtom = parameters.get(atom)!;
-        return [atom, electronegativity(parametersForAtom, charges.get(atom)!)] as const;
+        return [atom, peoeElectronegativity(parametersForAtom, charges.get(atom)!)] as const;
       }),
     );
     const changes = new Map(atoms.map((atom) => [atom, 0]));
@@ -169,7 +130,7 @@ export function partialCharges(
       const donor = acceptor === first ? second : first;
       const difference = Math.abs(firstChi - secondChi);
       const donorParameters = parameters.get(donor)!;
-      const denominator = electronegativity(donorParameters, 1);
+      const denominator = peoeElectronegativity(donorParameters, 1);
       const transfer = (passDamping * difference) / denominator;
 
       changes.set(acceptor, changes.get(acceptor)! - transfer);

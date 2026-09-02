@@ -55,7 +55,7 @@ substance that, once belts arrive, can be drawn out of.
   common name when PubChem has one (its `Title`), otherwise the IUPAC name
   (NCI Chemical Identifier Resolver as fallback; resolved names are persisted
   in the browser's localStorage, so reloads reuse them without the network);
-  the raw SMILES is the fallback label until the name arrives.
+  the molecular formula is the human-readable fallback when no name is known.
 - It carries a UI panel that opens when you click it: the substance's name
   (common, else IUPAC) as the title, a table with the common name, IUPAC name,
   chemical formula (with subscripted counts), and SMILES string (missing
@@ -87,7 +87,7 @@ registry that maps each SMILES string to its molecule graph** (`Molecule` in
   mapping without the network; a CIR-sourced name is re-checked against
   PubChem on the next lookup and upgraded once PubChem answers. Names are
   sanitized (Markush markup rejected) before caching; source labels show the
-  name instead of the raw SMILES once it resolves.
+  name instead of the molecular-formula fallback once it resolves.
 
 ## Moving around the world
 
@@ -107,10 +107,11 @@ The camera floats over the infinite grid:
   see how the map is recorded.
 - **Blocks** — colored squares on their cells (chemical sources are green).
 - **Labels** — zooming in on a source shows its name (PubChem common/IUPAC,
-  cached in the registry), falling back to the SMILES while the name loads.
+  cached in the registry), falling back to its molecular formula while the name loads.
 - **Block UI** — hover a source (the cursor turns into a pointer) and click it
   to open a centered panel with the block's UI; click outside the panel to
-  close it.
+  close it. Closing explicitly unmounts the nested Preact root, stopping its
+  animation loop and releasing its WebGL context before removing the host.
 - **HUD** (top-left) — current zoom, the grid cell under the cursor, and live
   counts of chunks, blocks, and distinct substances loaded.
 
@@ -147,7 +148,7 @@ npm run build # typecheck + production build into dist/
   so they run in Node tests and stay portable. The game shell runs on
   **Phaser 4** (installed 2026-08-28). Chemical-source panels embed a Three.js
   molecule viewer with drag/zoom controls, ball-and-stick and space-filling
-  representations, plus Structure, Hybridization, Charge, qualitative Electron
+  representations (space filling is disabled while inspecting orbitals), plus Structure, Hybridization, Charge, qualitative Electron
   cloud (bonds, VSEPR lone pairs and merged conjugated π clouds) and color-grouped, merged pi-orbital surfaces in a light-themed scene. Opposite π surfaces barely touch and are bounded without clipping; hovering one shows its ID, atom count and electron count beside the pointer. Space-filling atoms use overlapping van der Waals radii. The registry caches generated coordinates with mutation-aware invalidation. The cached RDKit SVG remains the lightweight
   representation for future molecule icons.
 - Block UI panels are built with **Preact** (JSX/TSX via @preact/preset-vite)
